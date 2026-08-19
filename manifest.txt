@@ -1,0 +1,39 @@
+# The workspace's dependencies, read by `make install` and `make check`.
+#
+#   <kind> <name> <why it is needed>
+#
+# kind is formula or cask; both are probed by asking Homebrew, which installed
+# them — its own record is the honest witness, and unlike looking for a binary
+# or an .app it works uniformly for libraries, shell scripts and fonts, none of
+# which put anything on PATH.
+
+# -- the workspace itself
+formula fzf                      the repo picker, and every fzf binding
+formula neovim                   the editor tab; ctrl-e in fzf; alias vi
+formula gitui                    the gitui pane
+formula glow                     markdown preview and ctrl-g in fzf
+formula bat                      file preview in ctrl-t; alias cat
+formula eza                      tree preview in ctrl-t and alt-c; alias ls
+formula fd                       the list behind ctrl-t, alt-c and completion
+
+# -- what ~/.zshrc runs on every shell startup
+formula zsh-autosuggestions      .zshrc sources it at startup
+formula zsh-syntax-highlighting  .zshrc sources it to colour the command line
+formula thefuck                  .zshrc eval's its alias at startup
+formula pkgconf                  .zshrc runs pkg-config at every startup
+formula mysql-client             the mysqlclient .pc file .zshrc points at
+formula powerlevel10k            the prompt, sourced straight from brew
+
+# -- what the nvim config declares
+formula stylua                   the Lua formatter conform.nvim runs
+formula ripgrep                  telescope's live_grep
+formula node                     markdown-preview's build, and html/cssls
+
+# -- the applications the workspace opens
+cask iterm2                      the workspace itself
+cask claude-code                 the claude tab
+cask visual-studio-code          opened on the repo
+cask firefox@developer-edition   browser Space
+cask slack                       slack Space
+cask font-jetbrains-mono-nerd-font  glyphs for powerlevel10k and eza --icons
+cask font-fira-code-nerd-font       glyphs for powerlevel10k and eza --icons
