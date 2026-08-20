@@ -14,7 +14,13 @@ make link       # relink $(brew --prefix)/bin/trmrdev (install calls it)
 
 trmrdev --no-upgrade            # pick a repo with fzf, launch the workspace
 trmrdev --no-upgrade --repo X   # skip the picker; X is a name under ~/dev or a full path
+trmrdev --pack-up               # close a workspace again; pick from the open ones
+trmrdev --pack-up --repo X      # pack up that one
 ```
+
+`make install` converges in **one run**: it waits for the Command Line Tools to
+finish installing rather than asking to be re-run, and verifies itself with
+`make check` at the end instead of assuming it worked.
 
 There is **no test suite, no linter, and no CI** — don't go looking. `make check`
 is the only verification the repo has: it probes the toolchain, every
@@ -50,6 +56,11 @@ Four artifacts, each with one job:
 
 `venv/` is an **output** of `make install`, never a prerequisite for it, and is
 gitignored.
+
+`~/.local/state/trmrdev/workspaces.json` records what each open workspace
+started, keyed by repo path: the ids of the tabs created and the apps this tool
+launched. It lives outside the repo deliberately — the repo is what gets shared,
+and this is machine state.
 
 ### trmrdev.py: the bootstrap re-exec
 
@@ -97,6 +108,20 @@ non-obvious comments exist because the naive version was wrong:
   to the first and last lines of `zshrc-block.zsh`.
 - **`make link`** refuses to overwrite a non-symlink; **`make install`** never
   touches an existing `~/.config/nvim`.
+- **`--pack-up` closes tabs, never the window.** Run from inside iTerm2 the tool
+  *adopts* the window it was launched from, so closing the window would take the
+  shell you started from with it. If our tabs were the only ones, iTerm2 closes
+  the emptied window itself.
+- **Only apps this tool started are quit**, recorded at open time *before*
+  launching anything — that is the one moment "was it already running" is
+  knowable. An app you had open is not ours, and even ours stay while another
+  workspace is still open.
+- **Neither reuse nor pack-up trusts the state file.** Both rediscover our tabs
+  by their pinned `titleOverride` (`TAB_TITLES`), so a workspace built by a run
+  that died before saving is still reachable. Delete the state file and
+  `--pack-up --repo X` still works.
+- **The repo's dev servers are ended explicitly** by matching working directory:
+  a `manage.py runserver` routinely survives its pane closing and keeps the port.
 
 Edit `zshrc-block.zsh` and re-run `make install` (or `make zshrc`). Never edit
 the block inside `~/.zshrc` — the next install overwrites it.
