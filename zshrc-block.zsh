@@ -1,5 +1,6 @@
-# >>> trmrdev (managed by ~/trmrdev/Makefile) >>>
-# Rewritten by `make install`. Put your own tweaks OUTSIDE these markers —
+# >>> trmrdev >>>
+# Rewritten by trmrdev's `make install`. Put your own tweaks OUTSIDE these
+# markers —
 # anything between them is replaced.
 
 # Find Homebrew without trusting PATH. Its installer only PRINTS the shellenv

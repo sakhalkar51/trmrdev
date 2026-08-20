@@ -24,7 +24,7 @@ LAUNCHER   := $(HERE)/trmrdev.py
 BLOCK      := $(HERE)/zshrc-block.zsh
 MANIFEST   := $(HERE)/manifest.txt
 ZSHRC      := $(HOME)/.zshrc
-BEGIN_MARK := \# >>> trmrdev (managed by ~/trmrdev/Makefile) >>>
+BEGIN_MARK := \# >>> trmrdev >>>
 END_MARK   := \# <<< trmrdev <<<
 
 OMZ        := $(HOME)/.oh-my-zsh
@@ -181,6 +181,13 @@ venv:
 # Splice the block between its markers, leaving every line around it alone.
 # Appends when the markers are absent, and never writes without a backup.
 zshrc:
+	@if [ -f '$(ZSHRC)' ] && ! grep -qF '$(BEGIN_MARK)' '$(ZSHRC)' \
+	   && grep -qE '^# >>> (trmrdev|dev workspace).*>>>$$' '$(ZSHRC)'; then \
+	  cp '$(ZSHRC)' "$(ZSHRC).trmrdev-$$(date +%Y%m%d-%H%M%S)"; \
+	  sed -i '' -E 's|^# >>> (trmrdev\|dev workspace).*>>>$$|$(BEGIN_MARK)|' '$(ZSHRC)'; \
+	  sed -i '' -E 's|^# <<< dev workspace <<<$$|$(END_MARK)|' '$(ZSHRC)'; \
+	  echo 'make: migrated an older ~/.zshrc marker'; \
+	fi
 	@if [ -f '$(ZSHRC)' ] && grep -qF '$(BEGIN_MARK)' '$(ZSHRC)'; then \
 	  cp '$(ZSHRC)' "$(ZSHRC).trmrdev-$$(date +%Y%m%d-%H%M%S)"; \
 	  awk -v blockfile='$(BLOCK)' -v b='$(BEGIN_MARK)' -v e='$(END_MARK)' ' \
