@@ -37,9 +37,11 @@ exactly that reason.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -99,6 +101,8 @@ QUICK_HELP = """trmrdev — a per-repo workspace in iTerm2
   trmrdev --no-upgrade              pick a repo with fzf, then launch
   trmrdev --no-upgrade --repo zeus  skip the picker
   trmrdev --upgrade                 brew upgrade first, then launch
+  trmrdev --pack-up                 pack up a workspace: pick from what is open
+  trmrdev --pack-up --repo zeus     pack up that one
   trmrdev --help                    every launch option
 
 Dependencies live in the Makefile, not here:
@@ -111,7 +115,7 @@ Bare `trmrdev` prints this. Skipping the upgrade is the default, so
 same repo raises that workspace rather than building a second one."""
 
 
-def parse_args(argv: list[str]) -> "tuple[bool, Path | None]":
+def parse_args(argv: list[str]) -> "tuple[bool, Path | None, bool]":
     # Bare `trmrdev` says what it can do rather than launching something.
     if not argv:
         print(QUICK_HELP)
@@ -149,6 +153,16 @@ def parse_args(argv: list[str]) -> "tuple[bool, Path | None]":
         "to draw in, such as an Apple Shortcut.",
     )
 
+    parser.add_argument(
+        "--pack-up",
+        dest="pack_up",
+        action="store_true",
+        help="pack up the workspace for --repo instead of opening it: the "
+        "tabs it created, its dev servers, and any app this tool started for "
+        "it. The window itself and any tab you opened are left alone. "
+        "Without --repo, pick from the workspaces that are open.",
+    )
+
     args = parser.parse_args(argv)
 
     repo = None
@@ -160,7 +174,7 @@ def parse_args(argv: list[str]) -> "tuple[bool, Path | None]":
         if not repo.is_dir():
             die(f"not a directory: {repo}")
 
-    return args.upgrade, repo
+    return args.upgrade, repo, args.pack_up
 
 
 def has_tty() -> bool:
@@ -308,6 +322,63 @@ def plan(repo: Path) -> "dict[str, list[Pane]]":
     }
 
 
+# ------------------------------------------------------------------- state
+
+# What each open workspace opened, so closing undoes exactly that and no more.
+# Kept outside the tool directory on purpose: that directory is what gets
+# zipped and shared, and this is machine state, not part of the program.
+STATE_FILE = Path.home() / ".local/state/trmrdev/workspaces.json"
+
+
+def load_state() -> dict:
+    try:
+        return json.loads(STATE_FILE.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_state(state: dict) -> None:
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STATE_FILE.write_text(json.dumps(state, indent=1, sort_keys=True))
+
+
+def app_running(process: str) -> bool:
+    return subprocess.run(["pgrep", "-qx", process]).returncode == 0
+
+
+def quit_app(name: str) -> bool:
+    return subprocess.run(
+        ["osascript", "-e", f'tell application "{name}" to quit'],
+        capture_output=True,
+    ).returncode == 0
+
+
+def repo_servers(repo: Path) -> "list[int]":
+    """PIDs of dev servers running inside this repo.
+
+    Closing the window SIGHUPs its shells, but a runserver started in a pane
+    routinely survives that and keeps the port — so closing up has to find and
+    end them by working directory rather than trusting the window to do it.
+    """
+    found = subprocess.run(
+        ["pgrep", "-f", "manage.py runserver"], capture_output=True, text=True
+    )
+    pids = []
+    for pid in found.stdout.split():
+        cwd = subprocess.run(
+            ["lsof", "-a", "-p", pid, "-d", "cwd", "-Fn"],
+            capture_output=True, text=True,
+        ).stdout
+        for line in cwd.splitlines():
+            if not line.startswith("n"):
+                continue
+            path = line[1:]
+            if path == str(repo) or path.startswith(f"{repo}/"):
+                pids.append(int(pid))
+                break
+    return pids
+
+
 # ------------------------------------------------------------- desktop apps
 
 # (app name, System Events process name, opens the repo). The process name is
@@ -351,20 +422,29 @@ NO_ACCESSIBILITY = (
 )
 
 
-def start_desktop_apps(repo: Path) -> None:
-    """Launch the companion apps without waiting for them to finish opening.
+def start_desktop_apps(repo: Path) -> "list[str]":
+    """Launch the companion apps; return the ones this run actually started.
 
     Fullscreen comes later, so the apps get their startup time for free while
     the iTerm2 workspace is being built.
+
+    Whether *we* started an app decides whether --pack-up may quit it later. An
+    app the owner already had open is not ours to close, and the only moment
+    that is knowable is here, before we launch anything.
     """
-    for name, _, opens_repo in DESKTOP_APPS:
+    launched = []
+    for name, process, opens_repo in DESKTOP_APPS:
         if not (Path("/Applications") / f"{name}.app").is_dir():
             print(f"trmrdev: {name} is not installed, skipping", file=sys.stderr)
             continue
+        was_running = app_running(process)
         argv = ["open", "-a", name]
         if opens_repo:
             argv.append(str(repo))
         subprocess.run(argv, check=False)
+        if not was_running:
+            launched.append(name)
+    return launched
 
 
 def fullscreen_desktop_apps() -> None:
@@ -483,6 +563,10 @@ def claimable_window(app):
 # accepts user-defined variables under the "user." prefix.
 REPO_TAG = "user.devRepo"
 
+# The pinned titles of the tabs this tool creates. They double as the way to
+# recognise our own tabs when the state file cannot be trusted.
+TAB_TITLES = ("claude", "dev", "editor")
+
 
 async def existing_workspace(app, repo: Path):
     """The window already holding this repo's workspace, if there is one."""
@@ -497,7 +581,7 @@ async def build(
     layout: "dict[str, list[Pane]]",
     we_launched: bool,
     repo: Path,
-) -> bool:
+) -> "tuple[bool, list[str]]":
     """Build the workspace, or focus it if it is already up.
 
     Returns True when an existing workspace was reused. Running dev twice for
@@ -509,9 +593,20 @@ async def build(
     window = await existing_workspace(app, repo)
     if window is not None:
         await window.async_activate()
-        await window.async_set_fullscreen(True)
+        try:
+            await window.async_set_fullscreen(True)
+        except Exception:
+            pass
         await app.async_activate()
-        return True
+
+        # Rediscover our tabs by their pinned titles rather than trusting the
+        # state file. An open that died partway leaves real tabs and no record
+        # of them; without this, --pack-up could never find them again.
+        ours = []
+        for tab in window.tabs:
+            if await tab.async_get_variable("titleOverride") in layout:
+                ours.append(tab.tab_id)
+        return True, ours
 
     window = launching_window(app)
     # A window that is already someone else's workspace is not a host for this
@@ -529,6 +624,7 @@ async def build(
         claim_first_tab = True
 
     first_tab = None
+    made: list[str] = []
     for title, panes in layout.items():
         head, *rest = panes
 
@@ -551,6 +647,7 @@ async def build(
         # A pinned tab title; oh-my-zsh's termsupport rewrites session titles
         # on every prompt, but it cannot touch a tab title override.
         await tab.async_set_title(title)
+        made.append(tab.tab_id)
         if first_tab is None:
             first_tab = tab
 
@@ -558,14 +655,27 @@ async def build(
     await first_tab.async_select()
     await window.async_activate()
     await app.async_activate()
-    await window.async_set_fullscreen(True)
-    return False
+
+    # Fullscreen is cosmetic, and iTerm2 refuses it in states it does not
+    # explain (SetPropertyException). Letting that abort the run would throw
+    # away a workspace that is already built AND the record of what it opened,
+    # leaving apps running that --pack-up can no longer account for.
+    try:
+        await window.async_set_fullscreen(True)
+    except Exception as error:
+        print(f"trmrdev: could not fullscreen the window ({error})", file=sys.stderr)
+
+    return False, made
 
 
 # --------------------------------------------------------------------- main
 
 def main() -> None:
-    upgrade, repo = parse_args(sys.argv[1:])
+    upgrade, repo, packing_up = parse_args(sys.argv[1:])
+
+    if packing_up:
+        pack_up_workspace(repo or pick_open_workspace())
+        return
 
     if upgrade:
         print("Running brew upgrade...")
@@ -578,16 +688,16 @@ def main() -> None:
     # Started before the workspace is built, not after: launching is instant
     # but these apps take seconds to draw a window, and they spend that time
     # usefully while iTerm2 is being set up.
-    start_desktop_apps(repo)
+    launched = start_desktop_apps(repo)
 
     we_launched = ensure_iterm()
 
     # A list, because run_until_complete discards whatever the coroutine
     # returns and this needs to survive back out to report on.
-    reused: list[bool] = []
+    built: list = []
 
     async def run(connection) -> None:
-        reused.append(await build(connection, layout, we_launched, repo))
+        built.append(await build(connection, layout, we_launched, repo))
 
     try:
         iterm2.run_until_complete(run)
@@ -601,13 +711,159 @@ def main() -> None:
             raise
         die(unreachable(error))
 
-    if reused and reused[0]:
+    if built and built[0][0]:
         print(f"trmrdev: {repo.name} workspace already up, raising it", file=sys.stderr)
+
+    # Record what is open so --pack-up can undo exactly this. Re-opening merges
+    # rather than overwrites: the second run launches nothing, and forgetting
+    # what the first run started would strand those apps open forever.
+    state = load_state()
+    entry = state.get(str(repo), {})
+    entry["launched"] = sorted(set(entry.get("launched", [])) | set(launched))
+    made = built[0][1] if built else []
+    entry["tabs"] = made or entry.get("tabs", [])
+    entry["opened"] = entry.get("opened") or time.strftime("%Y-%m-%d %H:%M:%S")
+    state[str(repo)] = entry
+    save_state(state)
 
     fullscreen_desktop_apps()
     # Fullscreening the companions left the screen on Slack's Space; come back
     # to iTerm2, which is where the work starts.
     subprocess.run(["open", "-a", str(ITERM_APP)], check=False)
+
+
+
+# ------------------------------------------------------------------ pack up
+
+async def close_tabs(connection, repo: Path, tab_ids: "list[str]") -> int:
+    """Close the tabs this tool created for the repo, and nothing else.
+
+    Never closes the window itself. Run from inside iTerm2, trmrdev ADOPTS the
+    window it was launched from and appends its tabs to it — so closing the
+    window would take the shell you started from with it. Closing our own tabs
+    leaves that alone; if they were the only tabs, iTerm2 closes the emptied
+    window by itself.
+    """
+    app = await iterm2.async_get_app(connection)
+    closed = 0
+
+    # No record does not mean nothing is open: a workspace built before state
+    # tracking existed, or by a run that died before saving, still has real
+    # tabs. Find them the same way the reuse path does, by their pinned title,
+    # so --pack-up --repo works for any open workspace rather than only the
+    # ones with a tidy state entry.
+    if not tab_ids:
+        window = await existing_workspace(app, repo)
+        if window is not None:
+            tab_ids = [
+                tab.tab_id
+                for tab in window.tabs
+                if await tab.async_get_variable("titleOverride") in TAB_TITLES
+            ]
+
+    for tab_id in tab_ids:
+        tab = app.get_tab_by_id(tab_id)
+        if tab is None:
+            continue          # already closed by hand
+        await tab.async_close(force=True)
+        closed += 1
+
+    # Clear the tag so a later open rebuilds rather than "raising" a workspace
+    # whose tabs are gone. The window may itself be gone by now.
+    window = await existing_workspace(app, repo)
+    if window is not None:
+        try:
+            await window.async_set_variable(REPO_TAG, "")
+        except Exception:
+            pass
+
+    return closed
+
+
+def pack_up_workspace(repo: Path) -> None:
+    """Pack up one open workspace, undoing only what that open did.
+
+    Idempotent in both directions: closing what is already closed reports so
+    and changes nothing, and every step below is skipped when its target is
+    already gone.
+    """
+    state = load_state()
+    entry = state.pop(str(repo), None)
+
+    servers = repo_servers(repo)
+    for pid in servers:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+    tab_ids = list(entry.get("tabs", [])) if entry else []
+    closed: list[int] = []
+
+    async def run(connection) -> None:
+        closed.append(await close_tabs(connection, repo, tab_ids))
+
+    try:
+        iterm2.run_until_complete(run)
+    except (ConnectionRefusedError, OSError):
+        pass
+    except SystemExit as error:
+        if error.code not in (None, 0):
+            print("trmrdev: iTerm2 is not reachable; window left alone", file=sys.stderr)
+
+    tabs_closed = closed[0] if closed else 0
+
+    # Quit only what this workspace started, and only once no other workspace
+    # is still relying on it. Apps are machine-wide but workspaces are not, so
+    # the last one out turns the lights off.
+    ours = list(entry.get("launched", [])) if entry else []
+    quit_names: list[str] = []
+    if ours and not state:
+        for name in ours:
+            if quit_app(name):
+                quit_names.append(name)
+    elif ours:
+        remaining = ", ".join(sorted(Path(k).name for k in state))
+        print(
+            f"trmrdev: leaving {', '.join(ours)} open — still needed by {remaining}",
+            file=sys.stderr,
+        )
+
+    save_state(state)
+
+    if not (entry or tabs_closed or servers):
+        print(f"trmrdev: nothing open for {repo.name}", file=sys.stderr)
+        return
+
+    did = []
+    if tabs_closed:
+        did.append(f"{tabs_closed} tab{'s' if tabs_closed > 1 else ''}")
+    if servers:
+        did.append(f"{len(servers)} dev server{'s' if len(servers) > 1 else ''}")
+    if quit_names:
+        did.append(", ".join(quit_names))
+    print(f"trmrdev: closed {repo.name} ({'; '.join(did) or 'state only'})", file=sys.stderr)
+
+
+def pick_open_workspace() -> Path:
+    """Which workspace to close, chosen from the ones actually open."""
+    state = load_state()
+    if not state:
+        die("no workspaces are open")
+    keys = sorted(state)
+    if len(keys) == 1:
+        return Path(keys[0])
+    if not has_tty() or not shutil.which("fzf"):
+        listing = "\n  ".join(Path(k).name for k in keys)
+        die(f"name the one to close with --repo. Open:\n  {listing}")
+    picked = subprocess.run(
+        ["fzf", "--prompt=close > "],
+        input="\n".join(keys), capture_output=True, text=True,
+    )
+    chosen = picked.stdout.strip().splitlines()
+    if picked.returncode != 0 or not chosen:
+        sys.exit(0)
+    return Path(chosen[0])
 
 
 def unreachable(error: BaseException) -> str:

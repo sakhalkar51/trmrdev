@@ -9,8 +9,10 @@
 # needs installing. Python appears only in what it builds.
 #
 # On a bare Mac, /usr/bin/make is a stub fronting the Xcode Command Line Tools
-# (the same shim as python3 and git), so the first `make install` raises the
-# CLT install dialog. Complete it, then run make again.
+# (the same shim as python3 and git), so invoking make at all raises the CLT
+# install dialog. Accept it and install waits for it to finish rather than
+# asking you to start over: one run is meant to be enough, and it verifies
+# itself at the end rather than trusting that it worked.
 #
 # The dependency list lives in manifest.txt, not here.
 
@@ -116,10 +118,16 @@ check:
 
 install:
 	@if ! xcode-select -p >/dev/null 2>&1; then \
-	  echo 'make: installing the Xcode Command Line Tools...'; \
-	  xcode-select --install || true; \
-	  echo 'make: finish the dialog, then run `make install` again.'; \
-	  exit 1; \
+	  echo 'make: installing the Xcode Command Line Tools — accept the dialog.'; \
+	  xcode-select --install >/dev/null 2>&1 || true; \
+	  printf 'make: waiting for it to finish'; \
+	  n=0; \
+	  while ! xcode-select -p >/dev/null 2>&1; do \
+	    n=$$((n+1)); \
+	    [ $$n -gt 900 ] && { echo; echo 'make: the Command Line Tools never appeared; install them and re-run' >&2; exit 1; }; \
+	    printf '.'; sleep 2; \
+	  done; \
+	  echo ' done.'; \
 	fi
 	@$(LOAD_BREW); \
 	if ! command -v brew >/dev/null 2>&1; then \
@@ -148,7 +156,12 @@ install:
 	  rm -rf '$(NVIM)/.git'; \
 	fi
 	@$(MAKE) --no-print-directory venv zshrc link
-	@echo 'make: done. Run `exec zsh`, then `trmrdev --no-upgrade`.'
+	@echo
+	@echo 'make: verifying...'
+	@$(MAKE) --no-print-directory check >/dev/null 2>&1 \
+	  && echo 'make: done. Run `exec zsh`, then `trmrdev --no-upgrade`.' \
+	  || { echo 'make: some things are still missing —' >&2; $(MAKE) --no-print-directory check | grep MISSING >&2; \
+	       echo 'make: re-run `make install`, or fix the above by hand.' >&2; exit 1; }
 
 # The venv is the one piece of Python here, and it is an output, never a
 # prerequisite: built from brew's interpreter so it survives Xcode changes.

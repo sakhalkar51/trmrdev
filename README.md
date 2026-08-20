@@ -33,11 +33,24 @@ trmrdev --no-upgrade      # pick a repo with fzf and launch
 
 | Command | Does |
 |---|---|
-| `make install` | everything; safe to re-run |
+| `make install` | everything; one run is enough, and it verifies itself |
 | `make check` | what is present and what is missing; changes nothing |
 | `make clean` | remove the venv |
 | `trmrdev` | the quick help |
+| `trmrdev --no-upgrade` | pick a repo and open its workspace |
+| `trmrdev --pack-up` | pack one up again; pick from what is open |
+| `trmrdev --pack-up --repo zeus` | pack up that one |
 | `trmrdev --help` | every launch option |
+
+Opening and packing up are both idempotent. Opening a repo that is already
+open raises it rather than building a second copy; packing up one that is
+already packed up says so and changes nothing.
+
+Packing up closes **only the tabs trmrdev created** — the window and any tab
+you opened yourself stay exactly as they were. It also ends the dev servers
+running in that repo, which outlive their pane often enough to matter, and
+quits the apps *it* started. An app you already had open is not its to close,
+and it stays put while any other workspace is still open.
 
 ## Three things you must do by hand
 
