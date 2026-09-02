@@ -21,9 +21,23 @@ Preferences → Themes → Custom Theme, and paste:
 #1E1E2E,#F8F8FA,#CBA6F7,#1E1E2E,#11111B,#CDD6F4,#CBA6F7,#EBA0AC,#1E1E2E,#CDD6F4
 ```
 
-Slack's redesign maps these values onto its own built-in colours rather than
-applying the palette directly, so the result is an approximation. Catppuccin
-say as much upstream; on older Slack builds the string applies exactly.
+Two limits, both Slack's rather than the theme's:
+
+**The string only reaches the sidebar and top nav.** All ten slots map there —
+column background, active and hover items, text, mention badge, top nav — and
+none of them touches the message pane. Catppuccin's own template gives it away:
+the Latte entry is annotated *"Make sure to enable light mode!"*, because the
+message pane follows Slack's **Appearance** setting, not the string. So the
+message area has exactly two states, Slack's light and Slack's dark, and Mocha
+pairs with dark. It will read as *a* dark, close to but not equal to
+`#1E1E2E`; nothing in a theme string can close that gap. Only injecting CSS
+into Slack's Electron bundle would, which breaks on every update.
+
+**The redesign remaps the values.** Slack maps the string onto its own built-in
+colours rather than applying the palette literally — on this machine the
+applied theme recorded a titlebar of `#121016`, which is neither base nor
+crust. Catppuccin say as much upstream; on older Slack builds it applies
+exactly.
 
 ### Firefox Developer Edition
 
