@@ -12,11 +12,17 @@ make venv       # rebuild just the venv (install calls it)
 make zshrc      # re-splice the ~/.zshrc block (install calls it)
 make link       # relink $(brew --prefix)/bin/trmrdev (install calls it)
 
-trmrdev --no-upgrade            # pick a repo with fzf, launch the workspace
-trmrdev --no-upgrade --repo X   # skip the picker; X is a name under ~/dev or a full path
-trmrdev --pack-up               # close a workspace again; pick from the open ones
-trmrdev --pack-up --repo X      # pack up that one
+trmrdev -nu | --no-upgrade      # pick a repo with fzf, launch the workspace
+trmrdev -nu --repo X            # skip the picker; X is a name under ~/dev or a full path
+trmrdev -u  | --upgrade         # brew upgrade first, then launch
+trmrdev -p  | --pack-up         # close a workspace again; pick from the open ones
+trmrdev -p  --repo X            # pack up that one
 ```
+
+`-nu` is a multi-character single-dash option. argparse resolves it by exact
+match, so it stays unambiguous even if a `-n` is added later — but it reads
+like combined short flags to a human, and it is one character away from `-u`,
+which triggers a system-wide `brew upgrade`.
 
 `make install` converges in **one run**: it waits for the Command Line Tools to
 finish installing rather than asking to be re-run, and verifies itself with

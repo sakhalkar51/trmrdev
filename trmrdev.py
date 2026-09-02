@@ -98,12 +98,15 @@ except ImportError:
 
 QUICK_HELP = """trmrdev — a per-repo workspace in iTerm2
 
-  trmrdev --no-upgrade              pick a repo with fzf, then launch
-  trmrdev --no-upgrade --repo zeus  skip the picker
-  trmrdev --upgrade                 brew upgrade first, then launch
-  trmrdev --pack-up                 pack up a workspace: pick from what is open
-  trmrdev --pack-up --repo zeus     pack up that one
+  trmrdev -nu                       pick a repo with fzf, then launch
+  trmrdev -nu --repo zeus           skip the picker
+  trmrdev -u                        brew upgrade first, then launch
+  trmrdev -p                        pack up a workspace: pick from what is open
+  trmrdev -p --repo zeus            pack up that one
   trmrdev --help                    every launch option
+
+The long forms all still work: -nu is --no-upgrade, -u is --upgrade,
+-p is --pack-up.
 
 Dependencies live in the Makefile, not here:
 
@@ -132,13 +135,15 @@ def parse_args(argv: list[str]) -> "tuple[bool, Path | None, bool]":
 
     upgrade = parser.add_mutually_exclusive_group()
     upgrade.add_argument(
-        "--upgrade",
+        "-u", "--upgrade",
         dest="upgrade",
         action="store_true",
         help="run 'brew upgrade' before launching",
     )
+    # argparse accepts a multi-character single-dash option, and -nu is
+    # unambiguous here only because no -n exists to combine with.
     upgrade.add_argument(
-        "--no-upgrade",
+        "-nu", "--no-upgrade",
         dest="upgrade",
         action="store_false",
         help="skip the upgrade (the default)",
@@ -154,7 +159,7 @@ def parse_args(argv: list[str]) -> "tuple[bool, Path | None, bool]":
     )
 
     parser.add_argument(
-        "--pack-up",
+        "-p", "--pack-up",
         dest="pack_up",
         action="store_true",
         help="pack up the workspace for --repo instead of opening it: the "

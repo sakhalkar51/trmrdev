@@ -27,8 +27,8 @@ Complete it and run `make install` again — from there it installs Homebrew,
 every package, the venv, the `~/.zshrc` block and the `trmrdev` command.
 
 ```sh
-exec zsh                  # pick up the shell config
-trmrdev --no-upgrade      # pick a repo with fzf and launch
+exec zsh          # pick up the shell config
+trmrdev -nu       # pick a repo with fzf and launch
 ```
 
 | Command | Does |
@@ -37,9 +37,10 @@ trmrdev --no-upgrade      # pick a repo with fzf and launch
 | `make check` | what is present and what is missing; changes nothing |
 | `make clean` | remove the venv |
 | `trmrdev` | the quick help |
-| `trmrdev --no-upgrade` | pick a repo and open its workspace |
-| `trmrdev --pack-up` | pack one up again; pick from what is open |
-| `trmrdev --pack-up --repo zeus` | pack up that one |
+| `trmrdev -nu` | pick a repo and open its workspace (`--no-upgrade`) |
+| `trmrdev -u` | `brew upgrade` first, then open (`--upgrade`) |
+| `trmrdev -p` | pack one up again; pick from what is open (`--pack-up`) |
+| `trmrdev -p --repo zeus` | pack up that one |
 | `trmrdev --help` | every launch option |
 
 Opening and packing up are both idempotent. Opening a repo that is already
