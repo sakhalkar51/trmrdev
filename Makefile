@@ -168,7 +168,7 @@ install:
 # macOS sends a composed character otherwise, and the keybinds below would
 # never fire. Only ever adds the line; an existing config is left alone.
 ghostty:
-	@mkdir -p '$(dir $(GHOSTTY_CONF))'
+	@mkdir -p '$(dir $(GHOSTTY_CONF))' '$(HOME)/.config/eza'
 	@if grep -qE '^macos-option-as-alt' '$(GHOSTTY_CONF)' 2>/dev/null; then \
 	  echo 'make: ghostty config already sets macos-option-as-alt'; \
 	else \
@@ -176,6 +176,14 @@ ghostty:
 	  printf '\n# trmrdev: Option must send Alt so alt-arrow / alt-backspace reach the shell\nmacos-option-as-alt = true\n' >> '$(GHOSTTY_CONF)'; \
 	  echo 'make: added macos-option-as-alt to $(GHOSTTY_CONF)'; \
 	fi
+	@if grep -qE '^theme *=' '$(GHOSTTY_CONF)' 2>/dev/null; then \
+	  echo 'make: ghostty config already sets a theme'; \
+	else \
+	  printf '\n# trmrdev: catppuccin mocha, matching nvim, fzf, bat, eza and the prompt\ntheme = catppuccin-mocha\n' >> '$(GHOSTTY_CONF)'; \
+	  echo 'make: set ghostty theme = catppuccin-mocha'; \
+	fi
+	@cp '$(HERE)/themes/eza-theme.yml' '$(HOME)/.config/eza/theme.yml'
+	@echo 'make: installed the eza catppuccin-mocha theme'
 
 # Splice the block between its markers, leaving every line around it alone.
 # Appends when the markers are absent, and never writes without a backup.

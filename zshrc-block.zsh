@@ -120,6 +120,13 @@ if [[ -n $HOMEBREW_PREFIX && -r $HOMEBREW_PREFIX/opt/mysql-client/lib/pkgconfig/
   export MYSQLCLIENT_CFLAGS="$(pkg-config --cflags mysqlclient)"
 fi
 
+# One theme everywhere. bat and Ghostty ship catppuccin built in, so these
+# only have to be selected; eza reads ~/.config/eza/theme.yml, which
+# `make install` writes. glow is the exception — catppuccin publishes only a
+# whiskers template for it, no built style — so its previews stay on the
+# built-in dark style.
+export BAT_THEME="Catppuccin Mocha"
+
 # Word-wise line editing with Option. Ghostty is configured with
 # `macos-option-as-alt = true` (see the Makefile's ghostty target) so Option
 # sends a real Alt rather than a composed character; these bind what it sends.
