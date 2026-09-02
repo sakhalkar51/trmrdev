@@ -1,6 +1,6 @@
 # trmrdev
 
-A per-repo development workspace in iTerm2. Pick a repo, get a window:
+A per-repo development workspace in Ghostty. Pick a repo, get a window:
 
 | Tab | Contents |
 |---|---|
@@ -22,9 +22,13 @@ make install
 ```
 
 On a machine with nothing on it, `/usr/bin/make` is a stub fronting the Xcode
-Command Line Tools, so the first run raises the CLT install dialog and stops.
-Complete it and run `make install` again — from there it installs Homebrew,
-every package, the venv, the `~/.zshrc` block and the `trmrdev` command.
+Command Line Tools, so `make install` raises the CLT dialog. Accept it and the
+install waits rather than asking you to start over — from there it installs
+Homebrew, every package, Ghostty's config, the `~/.zshrc` block and the
+`trmrdev` command, then verifies itself.
+
+Ghostty is driven over AppleScript, so there is no venv and no third-party
+Python module to install.
 
 ```sh
 exec zsh          # pick up the shell config
@@ -35,7 +39,7 @@ trmrdev -nu       # pick a repo with fzf and launch
 |---|---|
 | `make install` | everything; one run is enough, and it verifies itself |
 | `make check` | what is present and what is missing; changes nothing |
-| `make clean` | remove the venv |
+| `make clean` | nothing to remove — there is no build output |
 | `trmrdev` | the quick help |
 | `trmrdev -nu` | pick a repo and open its workspace (`--no-upgrade`) |
 | `trmrdev -u` | `brew upgrade` first, then open (`--upgrade`) |
@@ -53,21 +57,20 @@ running in that repo, which outlive their pane often enough to matter, and
 quits the apps *it* started. An app you already had open is not its to close,
 and it stays put while any other workspace is still open.
 
-## Three things you must do by hand
+## Two things you must do by hand
 
-None can be scripted, and the workspace is degraded without them.
+Neither can be scripted, and the workspace is degraded without them.
 
-1. **Enable iTerm2's Python API** — Settings → General → Magic → *Enable Python
-   API*. Nothing works without it; it is how the window gets built.
-2. **Grant Accessibility** to whichever app you launch `trmrdev` from (iTerm2,
+1. **Grant Accessibility** to whichever app you launch `trmrdev` from (Ghostty,
    Terminal, Shortcuts) in System Settings → Privacy & Security → Accessibility.
-   Only fullscreen depends on it — everything else works regardless. macOS
-   exposes native fullscreen solely as an accessibility attribute.
-
-3. **Set the terminal font** to JetBrainsMono Nerd Font (or Fira Code Nerd
-   Font) in iTerm2 → Settings → Profiles → Text. `make install` installs them,
-   but nothing can select one for you — until you do, the prompt and
-   `eza --icons` render as tofu boxes.
+   Only the *companion apps'* fullscreen depends on it — the workspace itself
+   works regardless. macOS exposes native fullscreen solely as an accessibility
+   attribute, so nothing can reach it another way. The permission is per
+   launching app: switching terminals means granting it again.
+2. **Set the terminal font** to JetBrainsMono Nerd Font (or Fira Code Nerd
+   Font) in Ghostty's config (`font-family = "JetBrainsMono Nerd Font"`).
+   `make install` installs the fonts, but nothing can select one for you —
+   until you do, the prompt and `eza --icons` render as tofu boxes.
 
 Then run **`p10k configure`** once to build your prompt. The block sources
 powerlevel10k, but the theme's own settings live in `~/.p10k.zsh`, which only
@@ -106,9 +109,8 @@ Makefile          install · check · clean, in shell
 manifest.txt      the dependency list
 zshrc-block.zsh   the managed ~/.zshrc block
 trmrdev.py        the launcher
-venv/             built by make install; not shipped
+(no venv — AppleScript needs no third-party module)
 ```
 
 The installer is shell rather than Python on purpose: it has to run on a
 machine that has neither, which is exactly the machine that needs installing.
-The venv is an output of `make install`, never a prerequisite for it.

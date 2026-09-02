@@ -1,8 +1,8 @@
 # trmrdev — a per-repo workspace in iTerm2.
 #
-#   make install    everything: CLT, Homebrew, packages, venv, ~/.zshrc, the command
+#   make install    everything: CLT, Homebrew, packages, ghostty + zsh config, the command
 #   make check      what is present and what is missing; changes nothing
-#   make clean      remove the venv
+#   make clean      nothing to remove any more; kept so the verb still exists
 #
 # This file is the installer and the checker, in shell, on purpose: it has to
 # run on a machine with no Python and no venv — precisely the machine that
@@ -19,10 +19,10 @@
 SHELL := /bin/sh
 HERE  := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 
-VENV       := $(HERE)/venv
 LAUNCHER   := $(HERE)/trmrdev.py
 BLOCK      := $(HERE)/zshrc-block.zsh
 MANIFEST   := $(HERE)/manifest.txt
+GHOSTTY_CONF := $(HOME)/.config/ghostty/config
 ZSHRC      := $(HOME)/.zshrc
 BEGIN_MARK := \# >>> trmrdev >>>
 END_MARK   := \# <<< trmrdev <<<
@@ -42,14 +42,14 @@ NVIM_REPO  := https://github.com/NvChad/starter
 LOAD_BREW := for b in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -x "$$b" ] && eval "$$($$b shellenv)" && break; done; true
 
 .DEFAULT_GOAL := help
-.PHONY: help install check clean venv zshrc link
+.PHONY: help install check clean ghostty zshrc link
 
 help:
 	@echo 'trmrdev — a per-repo workspace in iTerm2'
 	@echo
-	@echo '  make install    CLT, Homebrew, packages, venv, ~/.zshrc block, the command'
+	@echo '  make install    CLT, Homebrew, packages, ghostty + ~/.zshrc config, the command'
 	@echo '  make check      what is present and what is missing (changes nothing)'
-	@echo '  make clean      remove the venv'
+	@echo '  make clean      nothing to remove (no venv since the Ghostty swap)'
 	@echo
 	@echo 'Then: trmrdev --no-upgrade    pick a repo and launch'
 	@echo '      trmrdev --help          every launch option'
@@ -87,16 +87,10 @@ check:
 	  [ -d "$$p" ] && s='ok     ' || { s='MISSING'; miss=$$((miss+1)); }; \
 	  printf '  %s  %-9s %-30s %s\n' "$$s" extra "$$n" "$$r"; \
 	done; \
-	if [ -x '$(VENV)/bin/python' ] && '$(VENV)/bin/python' -c 'import iterm2' 2>/dev/null; then \
-	  printf '  %s  %-9s %-30s %s\n' 'ok     ' venv 'venv + iterm2' '$(VENV)'; \
+	if grep -qE '^macos-option-as-alt' '$(GHOSTTY_CONF)' 2>/dev/null; then \
+	  printf '  %s  %-9s %-30s %s\n' 'ok     ' config ghostty-config '$(GHOSTTY_CONF)'; \
 	else \
-	  printf '  %s  %-9s %-30s %s\n' 'MISSING' venv 'venv + iterm2' 'the module the launcher drives iTerm2 with'; \
-	  miss=$$((miss+1)); \
-	fi; \
-	if '$(VENV)/bin/python' -c "import ast,sys; m=ast.parse(open(sys.argv[1]).read()); sys.exit(0 if any(isinstance(n,ast.Import) and any(a.name=='iterm2' for a in n.names) for n in ast.walk(m)) else 1)" '$(LAUNCHER)' 2>/dev/null; then \
-	  printf '  %s  %-9s %-30s %s\n' 'ok     ' launcher 'imports iterm2' 'trmrdev.py'; \
-	else \
-	  printf '  %s  %-9s %-30s %s\n' 'MISSING' launcher 'imports iterm2' 'every iterm2 call would be a NameError'; \
+	  printf '  %s  %-9s %-30s %s\n' 'MISSING' config ghostty-config 'alt-arrow word motion needs it'; \
 	  miss=$$((miss+1)); \
 	fi; \
 	if grep -qF '$(BEGIN_MARK)' '$(ZSHRC)' 2>/dev/null; then \
@@ -155,7 +149,7 @@ install:
 	    || echo 'make: could not clone the nvim config; the editor tab will open a bare nvim' >&2; \
 	  rm -rf '$(NVIM)/.git'; \
 	fi
-	@$(MAKE) --no-print-directory venv zshrc link
+	@$(MAKE) --no-print-directory ghostty zshrc link
 	@echo
 	@echo 'make: verifying...'
 	@$(MAKE) --no-print-directory check >/dev/null 2>&1 \
@@ -163,20 +157,19 @@ install:
 	  || { echo 'make: some things are still missing —' >&2; $(MAKE) --no-print-directory check | grep MISSING >&2; \
 	       echo 'make: re-run `make install`, or fix the above by hand.' >&2; exit 1; }
 
-# The venv is the one piece of Python here, and it is an output, never a
-# prerequisite: built from brew's interpreter so it survives Xcode changes.
-venv:
-	@$(LOAD_BREW); \
-	py="$$(brew --prefix 2>/dev/null)/bin/python3"; \
-	[ -x "$$py" ] || py=python3; \
-	if [ ! -x '$(VENV)/bin/python' ]; then \
-	  echo "make: building the venv with $$py"; \
-	  "$$py" -m venv '$(VENV)'; \
-	fi; \
-	'$(VENV)/bin/python' -c 'import iterm2' 2>/dev/null || { \
-	  echo 'make: installing the iterm2 module'; \
-	  '$(VENV)/bin/python' -m pip install -q --upgrade pip; \
-	  '$(VENV)/bin/python' -m pip install -q iterm2; }
+# Ghostty is driven over AppleScript, so there is no venv and no third-party
+# module — but Option must send Alt for word-wise editing to reach the shell.
+# macOS sends a composed character otherwise, and the keybinds below would
+# never fire. Only ever adds the line; an existing config is left alone.
+ghostty:
+	@mkdir -p '$(dir $(GHOSTTY_CONF))'
+	@if grep -qE '^macos-option-as-alt' '$(GHOSTTY_CONF)' 2>/dev/null; then \
+	  echo 'make: ghostty config already sets macos-option-as-alt'; \
+	else \
+	  [ -f '$(GHOSTTY_CONF)' ] && cp '$(GHOSTTY_CONF)' "$(GHOSTTY_CONF).trmrdev-$$(date +%Y%m%d-%H%M%S)" || true; \
+	  printf '\n# trmrdev: Option must send Alt so alt-arrow / alt-backspace reach the shell\nmacos-option-as-alt = true\n' >> '$(GHOSTTY_CONF)'; \
+	  echo 'make: added macos-option-as-alt to $(GHOSTTY_CONF)'; \
+	fi
 
 # Splice the block between its markers, leaving every line around it alone.
 # Appends when the markers are absent, and never writes without a backup.
@@ -215,5 +208,5 @@ link:
 	fi
 
 clean:
-	@rm -rf '$(VENV)'
-	@echo 'removed the venv; `make install` rebuilds it'
+	@echo 'nothing to clean: the tool has no build output since Ghostty replaced iTerm2'
+	@echo '(there is no venv any more — AppleScript needs no third-party module)'

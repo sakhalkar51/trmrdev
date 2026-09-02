@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""trmrdev — launch a per-repo workspace in iTerm2. No tmux anywhere.
+"""trmrdev — launch a per-repo workspace in Ghostty. No tmux anywhere.
 
     trmrdev                   print the quick help
     trmrdev --no-upgrade      pick a repo with fzf and launch
@@ -18,15 +18,16 @@ Layout (ported 1:1 from the tmux windows this replaced):
 
 Where it lands:
 
-    run from inside iTerm2  -> the tabs are added to THAT window
-    run from anywhere else  -> iTerm2 is launched/raised and gets a window
-                               (Terminal.app, Apple Shortcuts, Raycast, …)
+    Ghostty is launched if needed, and each workspace gets its own window.
+    Packing up closes only the tabs this tool made, so a window you were
+    already using survives.
 
 Session persistence is gone by design: close the window and the workspace is
-over, there is nothing to re-attach to. Navigation is iTerm2's own —
-cmd-<n> for tabs, cmd-opt-<arrow> for panes.
+over, there is nothing to re-attach to. Navigation is
+Ghostty's own: cmd-<n> for tabs, cmd-opt-<arrow> for panes.
 
-Requires "Enable Python API" (iTerm2 > Settings > General > Magic).
+Ghostty is driven over AppleScript, so there is nothing to enable and no
+third-party module to install — hence no venv.
 
 On a machine with nothing installed, run `make install` first — this file
 cannot run there at all, because its shebang needs a python3 that a Mac
@@ -48,14 +49,7 @@ import time
 from pathlib import Path
 
 DEV_ROOT = Path.home() / "dev"
-ITERM_APP = Path("/Applications/iTerm.app")
 TOOL_DIR = Path(__file__).resolve().parent
-VENV = TOOL_DIR / "venv"
-# iTerm2 only listens on this socket when the Python API is enabled; its
-# absence is the difference between "not launched yet" and "not enabled".
-API_SOCKET = (
-    Path.home() / "Library/Application Support/iTerm2/private/socket"
-)
 
 
 def die(msg: str, code: int = 1) -> "None":
@@ -63,40 +57,9 @@ def die(msg: str, code: int = 1) -> "None":
     sys.exit(code)
 
 
-# ---------------------------------------------------------------- bootstrap
-
-def bootstrap() -> None:
-    """Re-exec under the venv the Makefile built.
-
-    This file never creates the venv: `make install` owns that, so there is one
-    home for the rule and the installer stays runnable on a machine with no
-    Python at all. Here we only hop into it, or say what to run.
-    """
-    venv_python = VENV / "bin" / "python"
-    if not venv_python.exists():
-        die(f"no venv yet — run: make -C {TOOL_DIR} install")
-    if Path(sys.prefix) == VENV:
-        # Already inside it and the import still failed, so the venv is real
-        # but incomplete; rebuilding is the fix, not re-execing forever.
-        die(f"the venv has no iterm2 module — run: make -C {TOOL_DIR} install")
-
-    os.execv(str(venv_python), [str(venv_python), str(Path(__file__).resolve()), *sys.argv[1:]])
-
-
-# The import that decides which interpreter we are running under. Failing it is
-# the normal first step: the shebang starts us on the system python, where
-# iterm2 does not exist, and bootstrap() re-execs us under the venv where it
-# does. Keep this immediately after bootstrap() — it is the only thing that
-# calls it, and without it every iterm2 reference below is a NameError.
-try:
-    import iterm2
-except ImportError:
-    bootstrap()
-
-
 # ------------------------------------------------------------------ inputs
 
-QUICK_HELP = """trmrdev — a per-repo workspace in iTerm2
+QUICK_HELP = """trmrdev — a per-repo workspace in Ghostty
 
   trmrdev -nu                       pick a repo with fzf, then launch
   trmrdev -nu --repo zeus           skip the picker
@@ -126,7 +89,7 @@ def parse_args(argv: list[str]) -> "tuple[bool, Path | None, bool]":
 
     parser = argparse.ArgumentParser(
         prog="trmrdev",
-        description="Launch a per-repo workspace in iTerm2: a claude tab, a "
+        description="Launch a per-repo workspace in Ghostty: a claude tab, a "
         "3-pane dev tab, an editor tab, plus VS Code, Firefox and Slack. "
         "Dependencies are the Makefile's job: make install, make check.",
         epilog="Running trmrdev twice for the same repo raises the existing "
@@ -246,13 +209,13 @@ def find_manage(repo: Path) -> "Path | None":
 # -------------------------------------------------------------------- panes
 
 class DevError(Exception):
-    """A failure iTerm2 reported while building the workspace."""
+    """A failure reported while building the workspace."""
 
 
 class Pane:
-    """One iTerm2 session: a label, a working directory, a command to land on.
+    """One terminal: a label, a working directory, a command to land on.
 
-    `setup` is the plumbing — cd, venv, pane label — and is wiped from the
+    `setup` is the plumbing — venv, pane label — and is wiped from the
     screen before `run` takes over, so the pane opens on its program (or a
     clean prompt), not on the lines this script typed to get there.
 
@@ -272,10 +235,9 @@ class Pane:
         self.cwd = cwd
         self.vertical = vertical
 
-        # Every pane carries its own cd. A profile customization would be
-        # tidier, but it cannot reach the one tab we adopt rather than create
-        # (the window a cold iTerm2 opens for itself), which would leave claude
-        # running in $HOME. One mechanism, correct everywhere.
+        # No `cd` here: Ghostty's surface configuration sets the working
+        # directory at birth (see config_for), so the terminal starts where it
+        # belongs instead of walking there in full view.
         #
         # The pane label is set from inside the shell rather than over the API.
         # oh-my-zsh's termsupport rewrites the name in preexec — which fires on
@@ -290,7 +252,6 @@ class Pane:
         # before `run`, because `run` is usually a program that never returns.
         steps = [
             "export DISABLE_AUTO_TITLE=true",
-            f"cd {shlex.quote(str(cwd))}",
             f"printf '\\033]0;%s\\a' {shlex.quote(label)}",
             *(s for s in setup if s),
             "clear && printf '\\033[3J'",
@@ -298,9 +259,6 @@ class Pane:
         if run:
             steps.append(run)
         self.command = " && ".join(steps)
-
-    async def dress(self, session) -> None:
-        await session.async_send_text(self.command + "\n")
 
 
 def plan(repo: Path) -> "dict[str, list[Pane]]":
@@ -347,8 +305,24 @@ def save_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state, indent=1, sort_keys=True))
 
 
-def app_running(process: str) -> bool:
-    return subprocess.run(["pgrep", "-qx", process]).returncode == 0
+def app_running(app_name: str) -> bool:
+    """True if that .app has a live process, asked by bundle rather than name.
+
+    pgrep is not trustworthy here: it fails to match Ghostty at all — not by
+    name, not with -f against the full command line — even while Ghostty is
+    the parent of the shell asking. `ps` sees it. Getting this wrong is not
+    cosmetic: a false "not running" makes the launcher believe it started
+    Ghostty, and the build then closes every pre-existing window as startup
+    litter.
+
+    Matching the bundle path also sidesteps guessing executable names, which
+    do not follow the app (VS Code runs as Electron, Firefox Developer
+    Edition as firefox).
+    """
+    listing = subprocess.run(
+        ["ps", "-eo", "comm"], capture_output=True, text=True
+    ).stdout
+    return f"/{app_name}.app/" in listing
 
 
 def quit_app(name: str) -> bool:
@@ -396,7 +370,7 @@ DESKTOP_APPS = (
 )
 
 # macOS exposes native fullscreen only as an accessibility attribute, so this
-# needs Accessibility permission for whichever app runs dev — iTerm2 normally,
+# needs Accessibility permission for whichever app runs trmrdev — Ghostty,
 # Terminal or Shortcuts otherwise. Nothing else drives it: none of these three
 # apps has an AppleScript dictionary, and no launch flag opens them fullscreen.
 # Strictly a setter, never a toggle, and a no-op when the window is already
@@ -431,7 +405,7 @@ def start_desktop_apps(repo: Path) -> "list[str]":
     """Launch the companion apps; return the ones this run actually started.
 
     Fullscreen comes later, so the apps get their startup time for free while
-    the iTerm2 workspace is being built.
+    the workspace is being built.
 
     Whether *we* started an app decides whether --pack-up may quit it later. An
     app the owner already had open is not ours to close, and the only moment
@@ -442,7 +416,7 @@ def start_desktop_apps(repo: Path) -> "list[str]":
         if not (Path("/Applications") / f"{name}.app").is_dir():
             print(f"trmrdev: {name} is not installed, skipping", file=sys.stderr)
             continue
-        was_running = app_running(process)
+        was_running = app_running(name)
         argv = ["open", "-a", name]
         if opens_repo:
             argv.append(str(repo))
@@ -487,190 +461,285 @@ def fullscreen_desktop_apps() -> None:
     if denied:
         print(
             "trmrdev: fullscreen needs Accessibility permission.\n"
-            "  Grant it to the app you run dev from (iTerm2, Terminal, "
+            "  Grant it to the app you run trmrdev from (Ghostty, Terminal, "
             "Shortcuts) in\n"
             "  System Settings > Privacy & Security > Accessibility, then run "
-            "dev again.\n"
+            "trmrdev again.\n"
             "  The workspace itself is up; only the other apps are not "
             "fullscreen.",
             file=sys.stderr,
         )
 
 
-# ------------------------------------------------------------------- iTerm2
+# ------------------------------------------------------------------ Ghostty
 
-def iterm_running() -> bool:
-    return subprocess.run(["pgrep", "-qx", "iTerm2"]).returncode == 0
+GHOSTTY_APP = Path("/Applications/Ghostty.app")
 
-
-def ensure_iterm() -> bool:
-    """Launch iTerm2 if needed. Returns True if we were the one to launch it."""
-    if not ITERM_APP.is_dir():
-        die(f"iTerm2 not found at {ITERM_APP}")
-    if iterm_running():
-        return False
-
-    # `open` hands our environment to the app it launches, and every pane's
-    # shell then inherits it from iTerm2. Running `dev` from inside a Claude
-    # Code session would otherwise leak CLAUDE_CODE_CHILD_SESSION into the new
-    # claude, which silently disables its transcript saving. Hand iTerm2 a
-    # clean environment; ~/.zshrc re-establishes anything intentional.
-    env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE")}
-    subprocess.run(["open", "-a", str(ITERM_APP)], check=True, env=env)
-    deadline = time.monotonic() + 15
-    while time.monotonic() < deadline:
-        if API_SOCKET.exists():
-            time.sleep(0.5)  # let the restored/default window settle
-            return True
-        time.sleep(0.1)
-    die(
-        "iTerm2 started but never opened its API socket.\n"
-        "  Enable it: iTerm2 > Settings > General > Magic > Enable Python API"
-    )
-    return True  # unreachable
-
-
-def launching_window(app):
-    """The window this script was run from, or None if we are not in iTerm2.
-
-    iTerm2 stamps every session's shell with ITERM_SESSION_ID = wNtNpN:<guid>,
-    and <guid> is the session's API id. Matching on it beats current_window,
-    which is merely whatever is frontmost — wrong the moment focus moves while
-    fzf is up.
-    """
-    stamp = os.environ.get("ITERM_SESSION_ID", "")
-    if not stamp:
-        return None
-    guid = stamp.rsplit(":", 1)[-1]
-    for window in app.terminal_windows:
-        for tab in window.tabs:
-            for session in tab.sessions:
-                if session.session_id == guid:
-                    return window
-    return None
-
-
-def claimable_window(app):
-    """A freshly launched iTerm2 opens a window of its own; adopt it rather
-    than leaving an empty orphan behind. Anything else — a restored
-    arrangement, several windows — is left alone and gets a new window."""
-    windows = app.terminal_windows
-    if len(windows) != 1:
-        return None
-    tabs = windows[0].tabs
-    if len(tabs) != 1 or len(tabs[0].sessions) != 1:
-        return None
-    return windows[0]
-
-
-# Stamped on every workspace window so a second run for the same repo finds
-# the first one instead of stacking another three tabs onto it. iTerm2 only
-# accepts user-defined variables under the "user." prefix.
-REPO_TAG = "user.devRepo"
-
-# The pinned titles of the tabs this tool creates. They double as the way to
-# recognise our own tabs when the state file cannot be trusted.
+# The tab titles this tool pins. Ghostty's `tab.name` is read-only over
+# AppleScript, unlike iTerm2's titleOverride, so the title is set from inside
+# the pane instead — see Pane. These names are what a tab is recognised by when
+# the state file cannot be trusted.
 TAB_TITLES = ("claude", "dev", "editor")
 
 
-async def existing_workspace(app, repo: Path):
-    """The window already holding this repo's workspace, if there is one."""
-    for window in app.terminal_windows:
-        if await window.async_get_variable(REPO_TAG) == str(repo):
-            return window
-    return None
+class GhosttyError(Exception):
+    """Ghostty refused something we asked of it."""
 
 
-async def build(
-    connection,
-    layout: "dict[str, list[Pane]]",
-    we_launched: bool,
-    repo: Path,
-) -> "tuple[bool, list[str]]":
-    """Build the workspace, or focus it if it is already up.
+def osa(script: str) -> str:
+    """Run one AppleScript against Ghostty and hand back its result."""
+    done = subprocess.run(
+        ["osascript", "-e", script], capture_output=True, text=True
+    )
+    if done.returncode != 0:
+        raise GhosttyError(done.stderr.strip() or "osascript failed")
+    return done.stdout.strip()
 
-    Returns True when an existing workspace was reused. Running dev twice for
-    the same repo is a no-op beyond raising the window, which is the whole
-    point — the tabs, panes and servers are already there.
+
+def as_str(text: str) -> str:
+    """A safe AppleScript string literal. Backslash and quote are the only two
+    characters that need escaping."""
+    return '"' + str(text).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def config_for(pane: "Pane") -> str:
+    """A Ghostty surface configuration record for one pane.
+
+    This is what replaces the `cd` that every iTerm2 pane had to carry: the
+    working directory and the first input are given to the surface at birth,
+    so the terminal starts where it belongs instead of walking there.
     """
-    app = await iterm2.async_get_app(connection)
+    parts = [f"initial working directory:{as_str(pane.cwd)}"]
+    if pane.command:
+        parts.append(f"initial input:{as_str(pane.command + chr(10))}")
+    return "{" + ", ".join(parts) + "}"
 
-    window = await existing_workspace(app, repo)
-    if window is not None:
-        await window.async_activate()
-        try:
-            await window.async_set_fullscreen(True)
-        except Exception:
-            pass
-        await app.async_activate()
 
-        # Rediscover our tabs by their pinned titles rather than trusting the
-        # state file. An open that died partway leaves real tabs and no record
-        # of them; without this, --pack-up could never find them again.
-        ours = []
-        for tab in window.tabs:
-            if await tab.async_get_variable("titleOverride") in layout:
-                ours.append(tab.tab_id)
-        return True, ours
+def ghostty_running() -> bool:
+    return app_running("Ghostty")
 
-    window = launching_window(app)
-    # A window that is already someone else's workspace is not a host for this
-    # one; leave it alone and open a new window instead of mixing two repos.
-    if window is not None and await window.async_get_variable(REPO_TAG):
-        window = None
 
-    claim_first_tab = False
-    if window is None:
-        window = claimable_window(app) if we_launched else None
-        if window is None:
-            window = await iterm2.Window.async_create(connection)
-            if window is None:
-                raise DevError("iTerm2 refused to create a window")
-        claim_first_tab = True
+def ensure_ghostty() -> bool:
+    """Launch Ghostty if needed. True if we were the one to launch it."""
+    if not GHOSTTY_APP.is_dir():
+        die(f"Ghostty is not installed at {GHOSTTY_APP}")
+    if ghostty_running():
+        return False
+    # `open` hands our environment to the app it launches, and every pane's
+    # shell inherits it. Running trmrdev from inside a Claude Code session
+    # would otherwise leak CLAUDE_CODE_CHILD_SESSION into the new claude,
+    # silently disabling its transcript saving.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE")}
+    subprocess.run(["open", "-a", str(GHOSTTY_APP)], check=True, env=env)
+    for _ in range(60):
+        if ghostty_running():
+            time.sleep(1.0)   # let the first window settle
+            return True
+        time.sleep(0.25)
+    die("Ghostty did not start")
+    return False   # unreachable
 
-    first_tab = None
-    made: list[str] = []
-    for title, panes in layout.items():
-        head, *rest = panes
 
-        if claim_first_tab and first_tab is None:
-            tab = window.current_tab
-        else:
-            tab = await window.async_create_tab()
-            if tab is None:
-                raise DevError(f"iTerm2 refused to create the {title} tab")
+def build(layout: "dict[str, list[Pane]]", repo: Path, drop_startup_window: bool = False) -> "tuple[str, list[str]]":
+    """Build the whole workspace in one AppleScript, returning (window, tabs).
 
-        session = tab.current_session
-        await head.dress(session)
+    One script rather than a call per tab: it is atomic from Ghostty's point of
+    view and avoids a dozen osascript round trips, each of which costs an
+    interpreter launch.
+    """
+    claude, dev, editor = layout["claude"], layout["dev"], layout["editor"]
+    server, gitui, shell = dev
 
-        # Every split is taken off the tab's first pane, so the declared order
-        # is the geometry: gitui right at full height, then shell under server.
-        for pane in rest:
-            new = await session.async_split_pane(vertical=pane.vertical)
-            await pane.dress(new)
+    # A cold Ghostty opens a window of its own before we ask for anything.
+    # Ours is a second one, so the startup window is left over — collect it
+    # first and close it at the end. Only ever when WE launched Ghostty:
+    # otherwise those are the owner's windows, not litter.
+    capture = "set stale to every window" if drop_startup_window else "set stale to {}"
+    dismiss = (
+        "repeat with old in stale\n    try\n      close window old\n    end try\n  end repeat"
+        if drop_startup_window else ""
+    )
 
-        # A pinned tab title; oh-my-zsh's termsupport rewrites session titles
-        # on every prompt, but it cannot touch a tab title override.
-        await tab.async_set_title(title)
-        made.append(tab.tab_id)
-        if first_tab is None:
-            first_tab = tab
+    script = f"""
+tell application "Ghostty"
+  activate
+  {capture}
+  set w to new window with configuration {config_for(claude[0])}
+  delay 0.6
+  -- Hold the tab itself, not its index: `tab 1 of w` is not addressable
+  -- ("Access not allowed"), and select tab wants a reference anyway.
+  set claudeTab to selected tab of w
+  set tabIds to (id of claudeTab)
 
-    await window.async_set_variable(REPO_TAG, str(repo))
-    await first_tab.async_select()
-    await window.async_activate()
-    await app.async_activate()
+  set devTab to new tab in w with configuration {config_for(server)}
+  delay 0.6
+  set serverTerm to focused terminal of devTab
+  -- gitui is split off first, while the server pane still owns the full
+  -- width, so it keeps full height on the right; the shell then halves the
+  -- left column. The declared order in plan() is the geometry.
+  split serverTerm direction right with configuration {config_for(gitui)}
+  delay 0.4
+  split serverTerm direction down with configuration {config_for(shell)}
+  set tabIds to tabIds & "," & (id of devTab)
 
-    # Fullscreen is cosmetic, and iTerm2 refuses it in states it does not
-    # explain (SetPropertyException). Letting that abort the run would throw
-    # away a workspace that is already built AND the record of what it opened,
-    # leaving apps running that --pack-up can no longer account for.
+  set edTab to new tab in w with configuration {config_for(editor[0])}
+  delay 0.4
+  set tabIds to tabIds & "," & (id of edTab)
+
+  select tab claudeTab
+  activate window w
+  -- Only ever fullscreen a window we just made. The Ghostty action is a
+  -- TOGGLE with no readable state, so applying it to an existing window
+  -- would take it OUT of fullscreen — the same trap the companion apps set.
+  perform action "toggle_fullscreen" on (focused terminal of (selected tab of w))
+
+  {dismiss}
+  return (id of w) & "|" & tabIds
+end tell
+"""
+    out = osa(script)
+    if "|" not in out:
+        raise GhosttyError(f"unexpected result from Ghostty: {out!r}")
+    window_id, tabs = out.split("|", 1)
+    return window_id, [t for t in tabs.split(",") if t]
+
+
+def workspace_tabs(repo: Path, window_id: str = "") -> "tuple[str, list[str]]":
+    """Find an open workspace for this repo: (window id, our tab ids).
+
+    Identity comes from the terminals' working directory rather than a tag —
+    Ghostty has no user-defined variables, and the directory is the truer fact
+    anyway. A run that died before saving state is still findable this way.
+    """
+    if not ghostty_running():
+        return "", []
+
+    script = f"""
+tell application "Ghostty"
+  set out to ""
+  repeat with w in windows
+    repeat with t in tabs of w
+      repeat with term in terminals of t
+        if (working directory of term) is {as_str(repo)} then
+          set out to out & (id of w) & " " & (id of t) & linefeed
+          exit repeat
+        end if
+      end repeat
+    end repeat
+  end repeat
+  return out
+end tell
+"""
     try:
-        await window.async_set_fullscreen(True)
-    except Exception as error:
-        print(f"trmrdev: could not fullscreen the window ({error})", file=sys.stderr)
+        out = osa(script)
+    except GhosttyError:
+        return "", []
 
-    return False, made
+    windows: dict = {}
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            windows.setdefault(parts[0], []).append(parts[1])
+    if not windows:
+        return "", []
+    if window_id and window_id in windows:
+        return window_id, windows[window_id]
+    first = next(iter(windows))
+    return first, windows[first]
+
+
+def raise_workspace(window_id: str) -> None:
+    """Bring the workspace forward. `open` raises the app without AppleScript;
+    only picking out the specific window needs a script."""
+    subprocess.run(["open", "-a", str(GHOSTTY_APP)], check=False)
+    if not window_id:
+        return
+    try:
+        osa(
+            'tell application "Ghostty" to activate window '
+            f"(first window whose id is {as_str(window_id)})"
+        )
+    except GhosttyError:
+        pass
+
+
+def close_tabs(tab_ids: "list[str]") -> int:
+    """Close exactly these tabs. Never the window.
+
+    Ghostty has no way to address a tab by id directly — `tab of windows whose
+    id is ...` filters the WINDOWS, which silently matches nothing and closes
+    nothing — so the tabs are walked and compared. One script for all of them,
+    rather than an osascript launch each.
+
+    If they were the only tabs, Ghostty closes the emptied window itself; a
+    window you were already using keeps its own tabs and stays open.
+    """
+    if not tab_ids:
+        return 0
+
+    wanted = "{" + ", ".join(as_str(t) for t in tab_ids) + "}"
+    script = f"""
+tell application "Ghostty"
+  set wanted to {wanted}
+  -- Close one, then rescan. AppleScript references are POSITIONAL: closing
+  -- `tab 1` renumbers everything after it, so a reference collected earlier
+  -- now points at a different tab. Collecting first and closing second still
+  -- closed two of three. Matching by id after every close is the only stable
+  -- way. Three tabs, so the rescan costs nothing.
+  set closed to 0
+  repeat
+    set hit to false
+    repeat with w in (every window)
+      repeat with t in (every tab of w)
+        if (id of t) is in wanted then
+          close tab t
+          set closed to closed + 1
+          set hit to true
+          exit repeat
+        end if
+      end repeat
+      if hit then exit repeat
+    end repeat
+    if not hit then exit repeat
+  end repeat
+  return closed
+end tell
+"""
+    before = len(surviving_tabs(tab_ids))
+    try:
+        osa(script)
+    except GhosttyError:
+        pass   # closing the last tab takes the window with it, which the
+               # script can report as an error after the work is done
+    return before - len(surviving_tabs(tab_ids))
+
+
+def surviving_tabs(tab_ids: "list[str]") -> "list[str]":
+    """Which of these tab ids Ghostty still has.
+
+    The close script's own return value is not trustworthy: closing the last
+    tab closes the window under it, and the script can fail *after* doing the
+    work — which reported nothing closed while three tabs had gone. Counting
+    before and after is the honest measure.
+    """
+    if not tab_ids or not ghostty_running():
+        return []
+    wanted = "{" + ", ".join(as_str(t) for t in tab_ids) + "}"
+    script = f"""
+tell application "Ghostty"
+  set found to ""
+  repeat with w in (every window)
+    repeat with t in (every tab of w)
+      if (id of t) is in {wanted} then set found to found & (id of t) & linefeed
+    end repeat
+  end repeat
+  return found
+end tell
+"""
+    try:
+        return [x for x in osa(script).splitlines() if x.strip()]
+    except GhosttyError:
+        return []
 
 
 # --------------------------------------------------------------------- main
@@ -692,32 +761,21 @@ def main() -> None:
 
     # Started before the workspace is built, not after: launching is instant
     # but these apps take seconds to draw a window, and they spend that time
-    # usefully while iTerm2 is being set up.
+    # usefully while the workspace is being set up.
     launched = start_desktop_apps(repo)
 
-    we_launched = ensure_iterm()
+    we_launched = ensure_ghostty()
 
-    # A list, because run_until_complete discards whatever the coroutine
-    # returns and this needs to survive back out to report on.
-    built: list = []
-
-    async def run(connection) -> None:
-        built.append(await build(connection, layout, we_launched, repo))
-
-    try:
-        iterm2.run_until_complete(run)
-    except DevError as error:
-        die(str(error))
-    except (ConnectionRefusedError, OSError) as error:
-        die(unreachable(error))
-    except SystemExit as error:
-        # run_until_complete swallows a refused connection into sys.exit(1).
-        if error.code in (None, 0):
-            raise
-        die(unreachable(error))
-
-    if built and built[0][0]:
+    window_id, existing = workspace_tabs(repo)
+    if existing:
+        raise_workspace(window_id)
+        made = existing
         print(f"trmrdev: {repo.name} workspace already up, raising it", file=sys.stderr)
+    else:
+        try:
+            window_id, made = build(layout, repo, drop_startup_window=we_launched)
+        except GhosttyError as error:
+            die(f"Ghostty refused to build the workspace: {error}")
 
     # Record what is open so --pack-up can undo exactly this. Re-opening merges
     # rather than overwrites: the second run launches nothing, and forgetting
@@ -725,65 +783,20 @@ def main() -> None:
     state = load_state()
     entry = state.get(str(repo), {})
     entry["launched"] = sorted(set(entry.get("launched", [])) | set(launched))
-    made = built[0][1] if built else []
     entry["tabs"] = made or entry.get("tabs", [])
+    entry["window"] = window_id or entry.get("window", "")
     entry["opened"] = entry.get("opened") or time.strftime("%Y-%m-%d %H:%M:%S")
     state[str(repo)] = entry
     save_state(state)
 
     fullscreen_desktop_apps()
     # Fullscreening the companions left the screen on Slack's Space; come back
-    # to iTerm2, which is where the work starts.
-    subprocess.run(["open", "-a", str(ITERM_APP)], check=False)
+    # to the terminal, which is where the work starts.
+    subprocess.run(["open", "-a", str(GHOSTTY_APP)], check=False)
 
 
 
 # ------------------------------------------------------------------ pack up
-
-async def close_tabs(connection, repo: Path, tab_ids: "list[str]") -> int:
-    """Close the tabs this tool created for the repo, and nothing else.
-
-    Never closes the window itself. Run from inside iTerm2, trmrdev ADOPTS the
-    window it was launched from and appends its tabs to it — so closing the
-    window would take the shell you started from with it. Closing our own tabs
-    leaves that alone; if they were the only tabs, iTerm2 closes the emptied
-    window by itself.
-    """
-    app = await iterm2.async_get_app(connection)
-    closed = 0
-
-    # No record does not mean nothing is open: a workspace built before state
-    # tracking existed, or by a run that died before saving, still has real
-    # tabs. Find them the same way the reuse path does, by their pinned title,
-    # so --pack-up --repo works for any open workspace rather than only the
-    # ones with a tidy state entry.
-    if not tab_ids:
-        window = await existing_workspace(app, repo)
-        if window is not None:
-            tab_ids = [
-                tab.tab_id
-                for tab in window.tabs
-                if await tab.async_get_variable("titleOverride") in TAB_TITLES
-            ]
-
-    for tab_id in tab_ids:
-        tab = app.get_tab_by_id(tab_id)
-        if tab is None:
-            continue          # already closed by hand
-        await tab.async_close(force=True)
-        closed += 1
-
-    # Clear the tag so a later open rebuilds rather than "raising" a workspace
-    # whose tabs are gone. The window may itself be gone by now.
-    window = await existing_workspace(app, repo)
-    if window is not None:
-        try:
-            await window.async_set_variable(REPO_TAG, "")
-        except Exception:
-            pass
-
-    return closed
-
 
 def pack_up_workspace(repo: Path) -> None:
     """Pack up one open workspace, undoing only what that open did.
@@ -803,20 +816,13 @@ def pack_up_workspace(repo: Path) -> None:
             pass
 
     tab_ids = list(entry.get("tabs", [])) if entry else []
-    closed: list[int] = []
+    # No record does not mean nothing is open: a workspace built before state
+    # tracking, or by a run that died before saving, still has real tabs. Ask
+    # Ghostty which of its terminals sit in this repo.
+    if not tab_ids:
+        _, tab_ids = workspace_tabs(repo, entry.get("window", "") if entry else "")
 
-    async def run(connection) -> None:
-        closed.append(await close_tabs(connection, repo, tab_ids))
-
-    try:
-        iterm2.run_until_complete(run)
-    except (ConnectionRefusedError, OSError):
-        pass
-    except SystemExit as error:
-        if error.code not in (None, 0):
-            print("trmrdev: iTerm2 is not reachable; window left alone", file=sys.stderr)
-
-    tabs_closed = closed[0] if closed else 0
+    tabs_closed = close_tabs(tab_ids)
 
     # Quit only what this workspace started, and only once no other workspace
     # is still relying on it. Apps are machine-wide but workspaces are not, so
@@ -869,14 +875,6 @@ def pick_open_workspace() -> Path:
     if picked.returncode != 0 or not chosen:
         sys.exit(0)
     return Path(chosen[0])
-
-
-def unreachable(error: BaseException) -> str:
-    return (
-        "could not reach iTerm2's Python API.\n"
-        "  Enable it: iTerm2 > Settings > General > Magic > Enable Python API\n"
-        f"  ({type(error).__name__}: {error})"
-    )
 
 
 if __name__ == "__main__":

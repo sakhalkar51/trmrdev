@@ -30,7 +30,7 @@ formula ripgrep                  telescope's live_grep
 formula node                     markdown-preview's build, and html/cssls
 
 # -- the applications the workspace opens
-cask iterm2                      the workspace itself
+cask ghostty                     the terminal the workspace is built in
 cask claude-code                 the claude tab
 cask visual-studio-code          opened on the repo
 cask firefox@developer-edition   browser Space

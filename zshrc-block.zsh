@@ -120,4 +120,16 @@ if [[ -n $HOMEBREW_PREFIX && -r $HOMEBREW_PREFIX/opt/mysql-client/lib/pkgconfig/
   export MYSQLCLIENT_CFLAGS="$(pkg-config --cflags mysqlclient)"
 fi
 
+# Word-wise line editing with Option. Ghostty is configured with
+# `macos-option-as-alt = true` (see the Makefile's ghostty target) so Option
+# sends a real Alt rather than a composed character; these bind what it sends.
+# Both encodings are bound because terminals disagree: modern ones send the
+# CSI form with modifier 3, older ones an ESC prefix.
+bindkey '^[[1;3D' backward-word          # alt-left
+bindkey '^[[1;3C' forward-word           # alt-right
+bindkey '^[b'     backward-word          # esc-prefixed equivalents
+bindkey '^[f'     forward-word
+bindkey '^[^?'    backward-kill-word     # alt-backspace
+bindkey '^[[3;3~' kill-word              # alt-delete, forwards
+
 # <<< trmrdev <<<
