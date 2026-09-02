@@ -176,6 +176,18 @@ ghostty:
 	  printf '\n# trmrdev: Option must send Alt so alt-arrow / alt-backspace reach the shell\nmacos-option-as-alt = true\n' >> '$(GHOSTTY_CONF)'; \
 	  echo 'make: added macos-option-as-alt to $(GHOSTTY_CONF)'; \
 	fi
+	@if grep -qE '^confirm-close-surface' '$(GHOSTTY_CONF)' 2>/dev/null; then \
+	  echo 'make: ghostty config already sets confirm-close-surface'; \
+	else \
+	  printf '\n# trmrdev: no confirmation prompt when closing a surface -- window,\n# tab, split or quit all go through this one setting.\nconfirm-close-surface = false\n' >> '$(GHOSTTY_CONF)'; \
+	  echo 'make: disabled ghostty close confirmations'; \
+	fi
+	@if grep -qE '^shell-integration-features' '$(GHOSTTY_CONF)' 2>/dev/null; then \
+	  echo 'make: ghostty config already sets shell-integration-features'; \
+	else \
+	  printf '\n# trmrdev: keep the block cursor. cursor-style already defaults to\n# block, but the shell-integration cursor feature overrides it to a bar\n# at the prompt -- turning that feature off is what actually keeps it.\nshell-integration-features = no-cursor\ncursor-style = block\n' >> '$(GHOSTTY_CONF)'; \
+	  echo 'make: set ghostty cursor to block'; \
+	fi
 	@if grep -qE '^theme *=' '$(GHOSTTY_CONF)' 2>/dev/null; then \
 	  echo 'make: ghostty config already sets a theme'; \
 	else \
