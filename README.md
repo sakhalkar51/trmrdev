@@ -57,9 +57,9 @@ running in that repo, which outlive their pane often enough to matter, and
 quits the apps *it* started. An app you already had open is not its to close,
 and it stays put while any other workspace is still open.
 
-## Two things you must do by hand
+## Three things you must do by hand
 
-Neither can be scripted, and the workspace is degraded without them.
+None can be scripted, and the workspace is degraded without them.
 
 1. **Grant Accessibility** to whichever app you launch `trmrdev` from (Ghostty,
    Terminal, Shortcuts) in System Settings → Privacy & Security → Accessibility.
@@ -67,7 +67,11 @@ Neither can be scripted, and the workspace is degraded without them.
    works regardless. macOS exposes native fullscreen solely as an accessibility
    attribute, so nothing can reach it another way. The permission is per
    launching app: switching terminals means granting it again.
-2. **Set the terminal font** to JetBrainsMono Nerd Font (or Fira Code Nerd
+2. **Theme Slack and Firefox** — both apply themes through their own UI, with
+   no config file to write. `themes/README.md` has the Slack colour string and
+   the Firefox Color link, both Mocha. Everything else is themed by
+   `make install`.
+3. **Set the terminal font** to JetBrainsMono Nerd Font (or Fira Code Nerd
    Font) in Ghostty's config (`font-family = "JetBrainsMono Nerd Font"`).
    `make install` installs the fonts, but nothing can select one for you —
    until you do, the prompt and `eza --icons` render as tofu boxes.
