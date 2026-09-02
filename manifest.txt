@@ -9,7 +9,7 @@
 
 # -- the workspace itself
 formula fzf                      the repo picker, and every fzf binding
-formula neovim                   the editor tab; ctrl-e in fzf; alias vi
+formula neovim                   the editor tab (LazyVim); ctrl-e in fzf; alias vi
 formula gitui                    the gitui pane
 formula glow                     markdown preview and ctrl-g in fzf
 formula bat                      file preview in ctrl-t; alias cat
@@ -26,7 +26,8 @@ formula powerlevel10k            the prompt, sourced straight from brew
 
 # -- what the nvim config declares
 formula stylua                   the Lua formatter conform.nvim runs
-formula ripgrep                  telescope's live_grep
+formula ripgrep                  LazyVim's grep picker
+formula lazygit                  the git UI LazyVim binds to <leader>gg
 formula node                     markdown-preview's build, and html/cssls
 
 # -- the applications the workspace opens

@@ -22,6 +22,7 @@ HERE  := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 LAUNCHER   := $(HERE)/trmrdev.py
 BLOCK      := $(HERE)/zshrc-block.zsh
 MANIFEST   := $(HERE)/manifest.txt
+NVIM_OVERLAY := $(HERE)/nvim
 GHOSTTY_CONF := $(HOME)/.config/ghostty/config
 ZSHRC      := $(HOME)/.zshrc
 BEGIN_MARK := \# >>> trmrdev >>>
@@ -30,11 +31,11 @@ END_MARK   := \# <<< trmrdev <<<
 OMZ        := $(HOME)/.oh-my-zsh
 NVIM       := $(HOME)/.config/nvim
 
-# The editor tab opens `nvim +NvimTreeFocus`, so nvim needs a config that
-# provides a file tree. NvChad's starter is that config; its .git is dropped
-# after cloning so the result is yours to commit, not a fork of a template.
+# The editor tab opens nvim on its file explorer, so nvim needs a config that
+# provides one. LazyVim's starter is that config; its .git is dropped after
+# cloning so the result is yours to commit, not a fork of a template.
 # An existing ~/.config/nvim is never touched.
-NVIM_REPO  := https://github.com/NvChad/starter
+NVIM_REPO  := https://github.com/LazyVim/starter
 
 # Homebrew may be installed but missing from PATH — normal in a fresh shell
 # that has not run `brew shellenv`. One line, because a multi-line define
@@ -82,7 +83,7 @@ check:
 	  echo '  (skipping package checks: nothing to ask)'; \
 	fi; \
 	for pair in '$(OMZ)|oh-my-zsh|the framework .zshrc is built on' \
-	            '$(NVIM)|nvim-config|the NvChad config the editor tab opens'; do \
+	            '$(NVIM)|nvim-config|the LazyVim config the editor tab opens'; do \
 	  p=$${pair%%|*}; rest=$${pair#*|}; n=$${rest%%|*}; r=$${rest#*|}; \
 	  [ -d "$$p" ] && s='ok     ' || { s='MISSING'; miss=$$((miss+1)); }; \
 	  printf '  %s  %-9s %-30s %s\n' "$$s" extra "$$n" "$$r"; \
@@ -148,6 +149,11 @@ install:
 	  git clone --depth=1 '$(NVIM_REPO)' '$(NVIM)' \
 	    || echo 'make: could not clone the nvim config; the editor tab will open a bare nvim' >&2; \
 	  rm -rf '$(NVIM)/.git'; \
+	  echo 'make: applying the nvim overlay'; \
+	  cp '$(NVIM_OVERLAY)/lazyvim.json' '$(NVIM)/'; \
+	  cp -R '$(NVIM_OVERLAY)/lua' '$(NVIM_OVERLAY)/plugin' '$(NVIM)/'; \
+	  echo 'make: installing nvim plugins'; \
+	  nvim --headless "+Lazy! sync" +qa >/dev/null 2>&1 || true; \
 	fi
 	@$(MAKE) --no-print-directory ghostty zshrc link
 	@echo

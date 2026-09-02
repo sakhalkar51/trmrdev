@@ -14,7 +14,7 @@ Layout (ported 1:1 from the tmux windows this replaced):
     Tab  claude    claude, in the repo root
     Tab  dev       3 panes — runserver (top-left), shell (bottom-left),
                    gitui (right, full height)
-    Tab  editor    nvim with the file-tree sidebar focused
+    Tab  editor    nvim with the file explorer open
 
 Where it lands:
 
@@ -281,7 +281,10 @@ def plan(repo: Path) -> "dict[str, list[Pane]]":
             Pane("gitui", repo, run="gitui", vertical=True),
             Pane("shell", repo, source, vertical=False),
         ],
-        "editor": [Pane("editor", repo, run="nvim +NvimTreeFocus")],
+        # :Neotree exists because the overlay enables LazyVim's neo-tree
+        # extra; stock LazyVim 14+ ships the snacks explorer instead and this
+        # command would fail.
+        "editor": [Pane("editor", repo, run="nvim +Neotree")],
     }
 
 
