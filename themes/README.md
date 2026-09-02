@@ -52,6 +52,25 @@ clicks:
 https://color.firefox.com/?theme=XQAAAAJEBAAAAAAAAABBqYhm849SCicxcUcPX38oKRicm6da8pFtMcajvXaAE3RJ0F_F447xQs-L1kFlGgDKq4IIvWciiy4upusW7OvXIRinrLrwLvjXB37kvhN5ElayHo02fx3o8RrDShIhRpNiQMOdww5V2sCMLAfehhpkvCNGPFQ9qpGpx7BgGSYPGUMFXC1Ua9FaxHdWOc93hEJrTCm7pTY2gENlkIGOUk-0q5koU7B1u0Ej-oMph40xEOeck_YUJD52Bwer09STdlto8FTe2opihD2FyRdpJyZydtlY3dK_RO373JUB4GPAs2saJone2-92ozhdZDXTzFe1BzECDYiTLKw8wgkHlYGBfEaHwiRhB6Xx67wrqMSr8VhLm8d-NCA1DySJVtxxWJN-qabWQpDds2gw6dhs97Ngt5Z_6ZhJ5vv31xfjj2v6iK816VOdJaIaQu4xsqHAytxXRLJQ8LtmF0BsXZI5kUVsRJUHALGJAvl388n-yyQfaq8ZWzVK-rrBoAJJqwlvJaa-7K1eFh6NaMojpf5pl-eqKMtg1KMmYlS4DjK6Z__leZhs
 ```
 
+## Claude Code
+
+There is no Catppuccin theme for Claude Code, and it does not need one. Set
+its theme to `dark-ansi` — the binary labels that *"Dark mode (ANSI colors
+only)"* — and it draws from the terminal's sixteen ANSI colours, which Ghostty
+now supplies as Catppuccin Mocha. The trade is fewer colours than the default
+`dark` theme, which uses truecolor.
+
+Set it with `/config` inside Claude Code, or in `~/.claude/settings.json`:
+
+```json
+{ "theme": "dark-ansi" }
+```
+
+`make install` deliberately leaves this alone. The other themed files are ones
+this repo owns or writes wholesale; `~/.claude/settings.json` is another tool's
+state, holding keys that have nothing to do with the workspace, and quietly
+rewriting it on every install is a good way to lose them to a schema change.
+
 ## glow
 
 Still unthemed. Catppuccin publishes only a whiskers template for glow
