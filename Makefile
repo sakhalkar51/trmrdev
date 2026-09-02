@@ -179,11 +179,19 @@ ghostty:
 	@if grep -qE '^theme *=' '$(GHOSTTY_CONF)' 2>/dev/null; then \
 	  echo 'make: ghostty config already sets a theme'; \
 	else \
-	  printf '\n# trmrdev: catppuccin mocha, matching nvim, fzf, bat, eza and the prompt\ntheme = catppuccin-mocha\n' >> '$(GHOSTTY_CONF)'; \
-	  echo 'make: set ghostty theme = catppuccin-mocha'; \
+	  printf '\n# trmrdev: catppuccin mocha, matching nvim, fzf, bat, eza and the prompt.\n# The value is the theme FILE name in Ghostty resources, spaces and all --\n# a slug like catppuccin-mocha is rejected at startup, not at write time.\ntheme = Catppuccin Mocha\n' >> '$(GHOSTTY_CONF)'; \
+	  echo 'make: set ghostty theme = Catppuccin Mocha'; \
 	fi
 	@cp '$(HERE)/themes/eza-theme.yml' '$(HOME)/.config/eza/theme.yml'
 	@echo 'make: installed the eza catppuccin-mocha theme'
+	@# +show-config only echoes what was written; +validate-config is the one
+	@# that rejects a bad theme name, which is how a slug slipped through once.
+	@if [ -x '/Applications/Ghostty.app/Contents/MacOS/ghostty' ]; then \
+	  /Applications/Ghostty.app/Contents/MacOS/ghostty +validate-config >/dev/null 2>&1 \
+	    && echo 'make: ghostty config validates' \
+	    || { echo 'make: ghostty config is INVALID —' >&2; \
+	         /Applications/Ghostty.app/Contents/MacOS/ghostty +validate-config 2>&1 | sed 's/^/  /' >&2; }; \
+	fi
 
 # Splice the block between its markers, leaving every line around it alone.
 # Appends when the markers are absent, and never writes without a backup.
