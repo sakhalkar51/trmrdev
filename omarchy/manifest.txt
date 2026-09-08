@@ -1,0 +1,8 @@
+# <kind> <name> <why> -- read by both `make check` and `make install` via the
+# same loop (see ../macos/manifest.txt for the pattern this mirrors).
+# kind is "pkg" (official repo, installed via `omarchy pkg add`) or "aur"
+# (AUR-only, via `omarchy pkg aur add`) -- nothing here needs aur today.
+pkg ghostty terminal windows for every pane
+pkg fzf repo/pack picker
+pkg gitui the dev pane's git client
+pkg neovim the editor pane

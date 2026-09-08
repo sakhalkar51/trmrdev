@@ -71,10 +71,14 @@ class, same as `open_shared_apps()`) right after closing that repo's own
 windows. So the shared apps track whether any repo workspace is active at
 all, not any one repo's lifecycle.
 
-`pack --all` closes every open repo instead of picking one. It's implemented
-as `pack_repo` in a loop over `open_repo_names()`, not a separate code path:
-each call re-queries who else is still open, so the shared-apps close still
-fires exactly once, on the last repo in the loop, for free.
+`pack --all` closes every open repo instead of picking one, then closes the
+shared apps once at the end -- not by calling `pack_repo` in a loop, which
+would race: closing a window is async (`hyprctl dispatch` returns before the
+app actually unmaps), so a `pack_repo` call run immediately after another can
+still see the just-closed repo's windows and wrongly conclude another repo
+is open. `pack_all` shares `close_repo_windows()` with `pack_repo` but skips
+its last-repo check entirely, since packing everything already guarantees
+nothing will be left open.
 
 ## Dual-monitor layout
 
@@ -94,16 +98,38 @@ placement depends on real creation order, and firing all 3 `exec_cmd` calls
 back-to-back can let Ghostty's startup time reorder that vs. dispatch order.
 Skipping the wait produced a wrong, non-reproducible layout in testing.
 
-## Usage
+## Install
 
 ```sh
 cd omarchy
-python3 launcher.py open                  # fzf-pick a repo under ~/Work
-python3 launcher.py open --repo NAME      # skip the picker
-python3 launcher.py pack                  # fzf-pick from currently open repos
-python3 launcher.py pack --repo NAME      # skip the picker
-python3 launcher.py pack --all            # close every open repo, and the shared apps with it
+make check     # what's present and what's missing; changes nothing
+make install   # packages via `omarchy pkg add` (manifest.txt), ~/Work, the trmrdev command
 ```
+
+Mirrors [`../macos/Makefile`](../macos/Makefile)'s install/check/clean shape,
+but not its shell-only constraint -- Omarchy ships python3 as part of the
+base system rather than gating it behind a Command Line Tools install, so
+there's no bare-machine bootstrapping problem to design around here. `make
+install` ends by symlinking `omarchy/trmrdev` onto `~/.local/bin/trmrdev`
+(never clobbering a pre-existing non-symlink there) so it runs as a bare
+command from anywhere, not just `cd omarchy && python3 launcher.py`. The
+symlink target is a small shell wrapper, not `launcher.py` directly --
+Python sets `sys.path[0]` from the invoked path, and a plain symlink to
+`launcher.py` would point that at `~/.local/bin` instead of `omarchy/`,
+breaking `from config import ...`.
+
+## Usage
+
+```sh
+trmrdev open                  # fzf-pick a repo under ~/Work
+trmrdev open --repo NAME      # skip the picker
+trmrdev pack                  # fzf-pick from currently open repos
+trmrdev pack --repo NAME      # skip the picker
+trmrdev pack --all            # close every open repo, and the shared apps with it
+```
+
+Without `make install`, run the same subcommands as `python3 launcher.py
+<subcommand>` from inside `omarchy/`.
 
 No package-upgrade step (the macOS version's `-u`/`brew upgrade` before
 open) — removed on request.

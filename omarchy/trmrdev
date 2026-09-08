@@ -1,0 +1,8 @@
+#!/bin/sh
+# Self-locating launcher: resolves through the ~/.local/bin symlink `make
+# link` creates, so `from config import ...` in launcher.py still finds
+# config.py next to it. A plain symlink straight to launcher.py would leave
+# Python's sys.path[0] pointing at ~/.local/bin instead of here, and that
+# import would fail.
+here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+exec python3 "$here/launcher.py" "$@"
