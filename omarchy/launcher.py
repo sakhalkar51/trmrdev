@@ -367,7 +367,15 @@ def kill_dev_server(repo: Path) -> None:
             continue
 
 
-def pack_repo(repo: Path) -> None:
+def close_shared_apps() -> None:
+    clients = hypr_clients()
+    for key in SHARED_APPS_ORDER:
+        existing = find_by_class(SHARED_APPS[key]["match_class"], clients)
+        if existing:
+            close_address(existing["address"])
+
+
+def close_repo_windows(repo: Path) -> None:
     title_base = f"{TITLE_PREFIX}:{repo.name}"
     clients = hypr_clients()
     for c in clients:
@@ -375,6 +383,31 @@ def pack_repo(repo: Path) -> None:
         if title == title_base or title.startswith(title_base + ":"):
             close_address(c["address"])
     kill_dev_server(repo)
+
+
+def pack_repo(repo: Path) -> None:
+    # Computed before closing: "is any *other* repo currently open",
+    # independent of whether `repo` itself was among them (packing a repo
+    # that was never open still counts as packing the last one if nothing
+    # else is open).
+    other_repo_open = any(name != repo.name for name in open_repo_names())
+    close_repo_windows(repo)
+    if not other_repo_open:
+        close_shared_apps()
+
+
+def pack_all() -> None:
+    """Pack every currently open repo, then close the shared apps once at
+    the end -- not via pack_repo's own last-repo check in a loop, which
+    would race: closing a window is async (hyprctl dispatch returns before
+    the app actually unmaps), so a second pack_repo call run immediately
+    after the first can still see the just-closed repo's windows and think
+    another repo is open. Since pack_all already knows by definition that
+    nothing will be left open, it skips that check entirely.
+    """
+    for name in open_repo_names():
+        close_repo_windows(find_repo(name))
+    close_shared_apps()
 
 
 # --------------------------------------------------------------------- main
@@ -388,7 +421,9 @@ def main() -> None:
     p_open.add_argument("--repo")
 
     p_pack = sub.add_parser("pack", help="close a repo's workspace")
-    p_pack.add_argument("--repo")
+    pack_target = p_pack.add_mutually_exclusive_group()
+    pack_target.add_argument("--repo")
+    pack_target.add_argument("--all", action="store_true", help="close every open repo, and the shared apps with it")
 
     args = parser.parse_args()
 
@@ -396,12 +431,13 @@ def main() -> None:
         repo = find_repo(args.repo) if args.repo else find_repo(fzf_pick(list_repos(), "open"))
         open_repo(repo)
     elif args.action == "pack":
-        if args.repo:
-            repo = find_repo(args.repo)
+        if args.all:
+            pack_all()
+        elif args.repo:
+            pack_repo(find_repo(args.repo))
         else:
             open_names = open_repo_names()
-            repo = find_repo(fzf_pick(open_names, "pack"))
-        pack_repo(repo)
+            pack_repo(find_repo(fzf_pick(open_names, "pack")))
 
 
 if __name__ == "__main__":

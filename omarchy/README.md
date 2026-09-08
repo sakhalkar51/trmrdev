@@ -33,7 +33,7 @@ launcher finds its own windows again for raise/pack-up without trusting a
 state file — same idea as the macOS version's `TAB_TITLES`, different
 mechanism (Hyprland window titles vs. Ghostty tab titles).
 
-Panes live on **numbered** workspaces (`config.NUMBERED_WORKSPACE_POOL`, 1-8),
+Panes live on **numbered** workspaces (`config.NUMBERED_WORKSPACE_POOL`, 1-6),
 not named ones. First attempt used named workspaces (`trmrdev:<repo>:<pane>`)
 so any number of repos could each get their own without colliding — but
 Omarchy's default SUPER+1-9/0 bindings switch to a specific numbered
@@ -41,8 +41,10 @@ workspace ID and never traverse named ones, so those workspaces were
 completely unreachable by hand once you switched away. Each pane now claims
 the lowest free slot in the pool (reused if that pane already has a window
 open) and gives it back when packed up. This caps concurrent repos at
-`len(pool) // 3` (2, with the default pool of 8) — a real tradeoff, but the
+`len(pool) // 3` (2, with the default pool of 6) — a real tradeoff, but the
 workspaces are actually usable, which the named-workspace version wasn't.
+Workspaces 7-10 are carved out for the shared apps below, not available to
+repo panes.
 
 Venv activation matches the macOS version's `plan()` exactly: `claude`,
 `dev/runserver`, and `dev/shell` source the venv first if one exists;
@@ -53,13 +55,37 @@ a plain prompt. `find_activate` checks `<repo>/venv` and `<repo>/.venv`
 first, then falls back to the same two names directly under `REPO_ROOT`
 (`~/Work/venv`) -- a venv doesn't have to live inside each repo.
 
-Slack and the local dev server (the "Django Dev" Omarchy web app, opened
-earlier) are **not** part of any repo's 3 workspaces — they're shared across
-every repo, pinned to fixed workspace IDs (9 and 10) so they're always in the
-same place, launched/focused (never duplicated) every time `open` runs. Since
-they never carry a `trmrdev:` title, `pack` (which matches on that prefix)
-never touches them either — packing up a repo only closes that repo's own
-windows.
+Apple Music, GitHub, Slack, and the local dev server (the "Django Dev"
+Omarchy web app) are **not** part of any repo's 3 workspaces — they're shared
+across every repo, pinned to fixed workspace IDs (7, 8, 9, 10 respectively)
+so they're always in the same place, launched/focused (never duplicated)
+every time `open` runs. They never carry a `trmrdev:` title, so `pack`'s
+window-matching loop (which matches on that prefix) never touches them
+directly while another repo is still open — `pack` on one of two open repos
+only closes that repo's own windows.
+
+Packing up the **last** open repo also closes the shared apps: `pack_repo`
+checks `open_repo_names()` against every repo *other* than the one being
+packed, and if none remain, calls `close_shared_apps()` (matched by window
+class, same as `open_shared_apps()`) right after closing that repo's own
+windows. So the shared apps track whether any repo workspace is active at
+all, not any one repo's lifecycle.
+
+`pack --all` closes every open repo instead of picking one. It's implemented
+as `pack_repo` in a loop over `open_repo_names()`, not a separate code path:
+each call re-queries who else is still open, so the shared-apps close still
+fires exactly once, on the last repo in the loop, for free.
+
+## Dual-monitor layout
+
+`~/.config/hypr/workspaces.lua` (Hyprland config, not part of this launcher)
+pins workspaces 1-3 to `HDMI-A-2` (primary, physically on the right) and 4-10
+to `HDMI-A-3` (secondary, physically on the left) via `hl.workspace_rule`.
+That keeps every repo pane on the primary display and pushes all four shared
+apps to the secondary one whenever both monitors are connected. On a single
+display, the rules for the disconnected monitor simply don't apply — nothing
+here needs to change when you unplug the second monitor, and this launcher
+has no monitor-awareness of its own.
 
 The `dev` pane's internal layout (runserver top-left, shell bottom-left,
 gitui right at full height) needs its 3 windows created one at a time,
@@ -76,6 +102,7 @@ python3 launcher.py open                  # fzf-pick a repo under ~/Work
 python3 launcher.py open --repo NAME      # skip the picker
 python3 launcher.py pack                  # fzf-pick from currently open repos
 python3 launcher.py pack --repo NAME      # skip the picker
+python3 launcher.py pack --all            # close every open repo, and the shared apps with it
 ```
 
 No package-upgrade step (the macOS version's `-u`/`brew upgrade` before

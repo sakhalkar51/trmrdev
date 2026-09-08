@@ -52,9 +52,19 @@ PANES = {
 # app-mode windows fork through setsid/uwsm-app, so a window-open rule can't
 # reliably target their workspace; the launcher instead launches, polls for
 # the class to appear, then explicitly moves it.
-SHARED_APPS_ORDER = ["slack", "browser"]
+SHARED_APPS_ORDER = ["apple_music", "github", "slack", "browser"]
 
 SHARED_APPS = {
+    "apple_music": {
+        "workspace": "7",
+        "match_class": "chrome-music.apple.com__in_-Default",
+        "desktop_file": "Apple Music",
+    },
+    "github": {
+        "workspace": "8",
+        "match_class": "chrome-github.com__-Default",
+        "desktop_file": "GitHub",
+    },
     "slack": {
         "workspace": "9",
         "match_class": "chrome-app.slack.com__client_T029VAHB475-Default",
@@ -70,8 +80,8 @@ SHARED_APPS = {
 # Numbered workspaces for repo panes -- SUPER+1-9/0 in Omarchy's default
 # bindings only ever switches to a specific numbered workspace ID, never a
 # named one, so a pane has to live on one of these to be reachable that way.
-# 9 and 10 are reserved for the shared apps above; a repo's panes claim
-# whichever of these are free and give them back when packed up.
-NUMBERED_WORKSPACE_POOL = list(range(1, 9))
+# 7-10 are reserved for the shared apps above; a repo's panes claim whichever
+# of these are free and give them back when packed up.
+NUMBERED_WORKSPACE_POOL = list(range(1, 7))
 
 TITLE_PREFIX = "trmrdev"
