@@ -83,13 +83,18 @@ nothing will be left open.
 ## Dual-monitor layout
 
 `~/.config/hypr/workspaces.lua` (Hyprland config, not part of this launcher)
-pins workspaces 1-3 to `HDMI-A-2` (primary, physically on the right) and 4-10
-to `HDMI-A-3` (secondary, physically on the left) via `hl.workspace_rule`.
-That keeps every repo pane on the primary display and pushes all four shared
-apps to the secondary one whenever both monitors are connected. On a single
-display, the rules for the disconnected monitor simply don't apply — nothing
-here needs to change when you unplug the second monitor, and this launcher
-has no monitor-awareness of its own.
+pins workspaces 1-3 to `HDMI-A-3` (positioned at `1920x0`, physically on the
+right) and 4-10 to `HDMI-A-2` (at `0x0`, on the left) via `hl.workspace_rule`.
+All four shared apps live on 7-10, so they land together on the left.
+
+That 3/7 split does not line up with `NUMBERED_WORKSPACE_POOL`'s 1-6, so a
+repo's panes are not guaranteed to share a display: the first repo opened
+claims 1-3 and lands entirely on the right, while a second one claims 4-6 and
+lands entirely on the left. Aligning them would mean a 6/4 split in
+`workspaces.lua`, not a change here. On a single display, the rules for the
+disconnected monitor simply don't apply — nothing here needs to change when
+you unplug the second monitor, and this launcher has no monitor-awareness of
+its own.
 
 The `dev` pane's internal layout (runserver top-left, shell bottom-left,
 gitui right at full height) needs its 3 windows created one at a time,
